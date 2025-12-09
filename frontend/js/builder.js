@@ -37,11 +37,29 @@ const STORAGE_KEY = 'spckit_builder_state';
  * 초기화
  */
 function init() {
-  // 1. 상태 복원
-  loadState();
-
-  // 2. URL 파라미터 처리
+  // 0. 새 세션인지 확인 (URL에 new=true 파라미터가 있거나, 세션 스토리지에 플래그가 없으면 초기화)
   const urlParams = new URLSearchParams(window.location.search);
+  const isNewSession = urlParams.get('new') === 'true' || !sessionStorage.getItem('spckit_session_started');
+  
+  if (isNewSession) {
+    // 새 세션 시작: 모든 상태 초기화
+    localStorage.removeItem(STORAGE_KEY);
+    chatHistory = [];
+    selectedParts = [];
+    currentPhase = 'requirements';
+    buildStageIndex = 0;
+    sessionStorage.setItem('spckit_session_started', 'true');
+    
+    // 채팅 메시지 영역 초기화
+    chatMessages.innerHTML = '';
+    
+    console.log('새 세션 시작: 모든 상태 초기화됨');
+  } else {
+    // 기존 세션: 상태 복원
+    loadState();
+  }
+
+  // 1. URL 파라미터 처리
   const initialMessage = urlParams.get('message');
 
   if (initialMessage) {
@@ -63,8 +81,13 @@ function init() {
   sendBtn.addEventListener('click', handleSendClick);
   chatInput.addEventListener('keydown', handleKeyDown);
   homeBtn.addEventListener('click', () => {
+    // 홈으로 이동 시 세션 플래그 제거하여 다음 방문 시 새 세션으로 시작
+    sessionStorage.removeItem('spckit_session_started');
     window.location.href = 'index.html';
   });
+  
+  // 페이지 로드 시 새 세션으로 시작하려면 URL에 ?new=true 추가
+  // 또는 브라우저 새 탭/새 창에서 열면 자동으로 새 세션 시작
   
   // Start Build 버튼 리스너
   if (startBuildBtn) {
@@ -874,9 +897,29 @@ function highlightSelectedInRecommendation() {
 init();
 
 /* ========================================
- * 이 부분 제거하면 3D 모델 제거됨 (3/4)
- * init3DViewer() 함수 전체와 하단의 setTimeout 호출 제거
+ * 3D 뷰어 초기화 함수 (개선된 버전)
  * ======================================== */
+let viewerState = {
+    scene: null,
+    camera: null,
+    renderer: null,
+    controls: null,
+    model: null,
+    container: null,
+    currentBackground: 0,
+    initialCameraPosition: null,
+    initialCameraTarget: null
+};
+
+// 배경 옵션 정의
+const BACKGROUND_OPTIONS = [
+    { name: '검은 공간', type: 'color', value: 0x000000 },
+    { name: '탁상 위', type: 'desk', value: null },
+    { name: '흰 배경', type: 'color', value: 0xffffff },
+    { name: '모니터와 함께', type: 'monitor', value: null },
+    { name: '방 인테리어', type: 'room', value: null }
+];
+
 // 3D 뷰어 초기화 함수
 async function init3DViewer() {
     try {
@@ -886,6 +929,13 @@ async function init3DViewer() {
             console.error('3D 뷰어 컨테이너를 찾을 수 없습니다');
             return;
         }
+        
+        viewerState.container = container;
+        
+        // 컨테이너 스크롤 방지
+        container.style.overflow = 'hidden';
+        container.style.position = 'relative';
+        
         console.log('컨테이너 찾음:', container.clientWidth, 'x', container.clientHeight);
 
         // Three.js 모듈 동적 import
@@ -899,7 +949,8 @@ async function init3DViewer() {
 
         // Scene 설정
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
+        viewerState.scene = scene;
+        setBackground(0); // 초기 배경 설정
 
         // Camera 설정
         const camera = new THREE.PerspectiveCamera(
@@ -910,44 +961,84 @@ async function init3DViewer() {
         );
         camera.position.set(0, 2, 5);
         camera.lookAt(0, 0, 0);
+        viewerState.camera = camera;
+        viewerState.initialCameraPosition = camera.position.clone();
+        viewerState.initialCameraTarget = new THREE.Vector3(0, 0, 0);
 
         // Renderer 설정
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         container.appendChild(renderer.domElement);
+        viewerState.renderer = renderer;
+        
+        // Canvas 스타일 설정 (스크롤 방지)
+        renderer.domElement.style.display = 'block';
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
 
-        // OrbitControls 추가 (마우스로 회전, 확대/축소 가능)
+        // OrbitControls 추가
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // 부드러운 움직임
+        controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.minDistance = 0.5; // 최소 줌 거리 (더 가까이)
-        controls.maxDistance = 50; // 최대 줌 거리 (더 멀리)
-        controls.autoRotate = false; // 자동 회전 비활성화
+        controls.minDistance = 0.5;
+        controls.maxDistance = 50;
+        controls.autoRotate = false;
+        controls.enablePan = true;
+        controls.target.set(0, 0, 0);
+        viewerState.controls = controls;
 
-        // 조명 추가 (PC 내부를 최대한 밝게)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 3.5); // 주변광 극대화
-        scene.add(ambientLight);
+        // 컨트롤 커스터마이징: Ctrl+드래그로 시점 변경 (Pan), 일반 드래그로 회전
+        let isCtrlPressed = false;
+        let isPanning = false;
+        
+        // 마우스 이벤트로 Ctrl 키 상태 추적
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            isCtrlPressed = e.ctrlKey || e.metaKey;
+            if (isCtrlPressed) {
+                isPanning = true;
+                controls.enableRotate = false;
+                controls.enablePan = true;
+            } else {
+                isPanning = false;
+                controls.enableRotate = true;
+                controls.enablePan = false;
+            }
+        });
+        
+        renderer.domElement.addEventListener('mouseup', () => {
+            isPanning = false;
+        });
+        
+        // 전역 키 이벤트로 Ctrl 키 상태 추적
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                isCtrlPressed = true;
+                if (renderer.domElement === document.activeElement || 
+                    renderer.domElement.contains(document.activeElement)) {
+                    controls.enableRotate = false;
+                    controls.enablePan = true;
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (!e.ctrlKey && !e.metaKey) {
+                isCtrlPressed = false;
+                controls.enableRotate = true;
+                controls.enablePan = false;
+            }
+        });
+        
+        // 마우스가 컨테이너 밖으로 나가면 상태 리셋
+        renderer.domElement.addEventListener('mouseleave', () => {
+            isPanning = false;
+        });
 
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 3.5); // 메인 조명 극대화
-        directionalLight1.position.set(5, 5, 5);
-        scene.add(directionalLight1);
-
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 3.0); // 보조 조명 극대화
-        directionalLight2.position.set(-5, 3, -5);
-        scene.add(directionalLight2);
-
-        const directionalLight3 = new THREE.DirectionalLight(0xffffff, 2.5); // 하단 조명 극대화
-        directionalLight3.position.set(0, -5, 5);
-        scene.add(directionalLight3);
-
-        const directionalLight4 = new THREE.DirectionalLight(0xffffff, 2.5); // 정면 조명 극대화
-        directionalLight4.position.set(0, 0, 8);
-        scene.add(directionalLight4);
-
-        const directionalLight5 = new THREE.DirectionalLight(0xffffff, 2.0); // 5번째 조명 (상단)
-        directionalLight5.position.set(0, 8, 0);
-        scene.add(directionalLight5);
+        // 조명 설정
+        setupLights(scene);
 
         // GLB 모델 로드
         const loader = new GLTFLoader();
@@ -960,6 +1051,7 @@ async function init3DViewer() {
                 console.log('GLB 로드 성공!', gltf);
                 model = gltf.scene;
                 scene.add(model);
+                viewerState.model = model;
                 
                 // 모델 크기 조정
                 const box = new THREE.Box3().setFromObject(model);
@@ -972,6 +1064,10 @@ async function init3DViewer() {
                 // 모델 중앙 정렬
                 const center = box.getCenter(new THREE.Vector3());
                 model.position.sub(center.multiplyScalar(scale));
+                
+                // 초기 카메라 위치 저장
+                viewerState.initialCameraPosition = camera.position.clone();
+                viewerState.initialCameraTarget = controls.target.clone();
 
                 console.log('3D 모델 로드 및 설정 완료');
             },
@@ -987,32 +1083,189 @@ async function init3DViewer() {
             }
         );
 
+        // UI 생성
+        create3DUI(container);
+
         // 애니메이션 루프
         function animate() {
             requestAnimationFrame(animate);
-            
-            // OrbitControls 업데이트 (자동 회전 포함)
             controls.update();
-            
             renderer.render(scene, camera);
         }
         animate();
 
         // 리사이즈 처리
-        window.addEventListener('resize', () => {
+        const handleResize = () => {
             const width = container.clientWidth;
             const height = container.clientHeight;
             
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            
-            renderer.setSize(width, height);
-        });
+            if (width > 0 && height > 0) {
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            }
+        };
+        
+        // ResizeObserver 사용 (지원되는 경우)
+        if (typeof ResizeObserver !== 'undefined') {
+            const resizeObserver = new ResizeObserver(handleResize);
+            resizeObserver.observe(container);
+        } else {
+            // 폴백: window resize 이벤트 사용
+            window.addEventListener('resize', handleResize);
+        }
 
         console.log('3D 뷰어 초기화 완료');
     } catch (error) {
         console.error('3D 뷰어 초기화 오류:', error);
     }
+}
+
+// 조명 설정 함수
+function setupLights(scene) {
+    // 기존 조명 제거
+    const lightsToRemove = [];
+    scene.traverse((child) => {
+        if (child instanceof THREE.Light) {
+            lightsToRemove.push(child);
+        }
+    });
+    lightsToRemove.forEach(light => scene.remove(light));
+
+    // 새로운 조명 추가
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    scene.add(ambientLight);
+
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 2.0);
+    directionalLight1.position.set(5, 5, 5);
+    directionalLight1.castShadow = true;
+    scene.add(directionalLight1);
+
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.5);
+    directionalLight2.position.set(-5, 3, -5);
+    scene.add(directionalLight2);
+
+    const directionalLight3 = new THREE.DirectionalLight(0xffffff, 1.0);
+    directionalLight3.position.set(0, -5, 5);
+    scene.add(directionalLight3);
+}
+
+// 배경 설정 함수
+function setBackground(index) {
+    if (!viewerState.scene) return;
+    
+    viewerState.currentBackground = index;
+    const option = BACKGROUND_OPTIONS[index];
+    
+    if (option.type === 'color') {
+        viewerState.scene.background = new THREE.Color(option.value);
+        viewerState.scene.environment = null;
+    } else {
+        // 복잡한 배경은 나중에 구현 (일단 검은색으로)
+        viewerState.scene.background = new THREE.Color(0x1a1a1a);
+        viewerState.scene.environment = null;
+    }
+}
+
+// 3D UI 생성 함수
+function create3DUI(container) {
+    // 상단 가이드 (플로팅)
+    const topGuide = document.createElement('div');
+    topGuide.id = 'viewer-top-guide';
+    topGuide.className = 'viewer-guide-top';
+    topGuide.innerHTML = `
+        <div class="guide-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <path d="M9 9h6v6H9z"/>
+            </svg>
+            <span>Ctrl + 드래그: 시점 변경</span>
+        </div>
+        <div class="guide-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 1v6m0 6v6M23 12h-6m-6 0H1"/>
+            </svg>
+            <span>휠: 확대/축소</span>
+        </div>
+        <div class="guide-item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>드래그: 회전</span>
+        </div>
+    `;
+    container.appendChild(topGuide);
+
+    // 우측 하단 컨트롤 (플로팅)
+    const bottomControls = document.createElement('div');
+    bottomControls.id = 'viewer-bottom-controls';
+    bottomControls.className = 'viewer-controls-bottom';
+    bottomControls.innerHTML = `
+        <button id="viewer-reset-btn" class="viewer-btn-reset" title="시점 최적화">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                <path d="M3 21v-5h5"/>
+            </svg>
+        </button>
+        <div class="viewer-bg-selector">
+            ${BACKGROUND_OPTIONS.map((opt, idx) => `
+                <button class="viewer-bg-btn ${idx === 0 ? 'active' : ''}" 
+                        data-bg-index="${idx}" 
+                        title="${opt.name}">
+                    <span class="bg-indicator"></span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+    container.appendChild(bottomControls);
+
+    // 이벤트 리스너
+    const resetBtn = document.getElementById('viewer-reset-btn');
+    resetBtn.addEventListener('click', resetViewpoint);
+
+    const bgButtons = bottomControls.querySelectorAll('.viewer-bg-btn');
+    bgButtons.forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+            bgButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            setBackground(idx);
+        });
+    });
+}
+
+// 시점 최적화 함수
+function resetViewpoint() {
+    if (!viewerState.camera || !viewerState.controls || !viewerState.model) return;
+    
+    const container = viewerState.container;
+    const camera = viewerState.camera;
+    const controls = viewerState.controls;
+    
+    // 모델의 바운딩 박스 계산
+    const box = new THREE.Box3().setFromObject(viewerState.model);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // 카메라 거리 계산 (컨테이너 크기에 맞춰 조정)
+    const containerAspect = container.clientWidth / container.clientHeight;
+    const distance = maxDim * 2.5;
+    
+    // 카메라 위치 설정 (정면에서 약간 위로)
+    camera.position.set(
+        center.x,
+        center.y + maxDim * 0.3,
+        center.z + distance
+    );
+    
+    // 타겟 설정
+    controls.target.copy(center);
+    controls.update();
 }
 
 // 이 부분도 제거 (3D 뷰어 호출)
