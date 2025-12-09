@@ -10,7 +10,8 @@
     "copy-files": "node scripts/build.js"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0"
+    "@google/genai": "^1.29.0",
+    "three": "^0.181.2"
   },
   "devDependencies": {
     "vite": "^6.2.0"

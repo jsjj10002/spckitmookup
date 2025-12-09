@@ -559,28 +559,25 @@ body {
     width: 100%;
     max-width: 570px;
     background: var(--color-tuna);
-    border: 5px solid rgb(26, 25, 25);
+    border: 3px solid rgb(26, 25, 25);
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0px 8px 32px -8px rgba(0, 0, 0, 0.1);
     position: relative;
     z-index: 3;
+    display: flex;
+    flex-direction: column;
 }
 
 .chat-input-wrapper {
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start; /* 위쪽 정렬로 변경 (아래로 확장되도록) */
     gap: 12px;
-    padding: 20px;
-    min-height: 90px;
+    padding: 16px 20px;
+    min-height: 70px;
+    max-height: 150px; /* 최대 높이 제한 */
     background: rgba(51, 51, 54, 0.5);
-}
-
-/* 채팅 입력(wrapper)에 오프셋을 적용하여 입력창과 버튼을 함께 이동시킵니다. */
-.chat-input-wrapper {
     position: relative;
-    top: -30px;   /* 아래로 6px 이동 */
-    left: -3px;  /* 오른쪽으로 6px 이동 */
 }
 
 .chat-input {
@@ -591,11 +588,12 @@ body {
     font-size: var(--font-size-14);
     font-family: var(--font-family);
     outline: none;
-    /* max-height 제거 및 div용 스타일 추가 */
     min-height: 20px;
-    max-height: 100px;
+    max-height: 80px;
     overflow-y: auto;
-    white-space: pre-wrap; /* 줄바꿈 지원 */
+    white-space: pre-wrap;
+    word-break: break-word; /* 긴 단어도 줄바꿈 */
+    line-height: 1.5;
 }
 
 /* Placeholder hack for contenteditable */
@@ -625,7 +623,7 @@ body {
 }
 
 .chat-send {
-    padding: 8px 40px;
+    padding: 8px 24px;
     background: var(--color-dodger-blue);
     border: none;
     border-radius: 9999px;
@@ -637,7 +635,8 @@ body {
     transition: opacity 0.3s ease;
     font-family: var(--font-family);
     flex-shrink: 0;
-    transform: translate(calc(-3% + var(--footer-logo-offset-x, 16px)), calc(220% + var(--footer-logo-offset-y, 20px)));
+    align-self: flex-end; /* 버튼을 아래쪽에 고정 */
+    margin-top: auto;
 }
 
 .chat-send:hover {

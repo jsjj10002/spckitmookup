@@ -5,16 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Spckit AI: PC Builder</title>
   <link rel="icon" type="image/svg+xml" href="./images/spckit-logo.svg">
-  <!-- 이 부분 제거하면 3D 모델 제거됨 (1/4) -->
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-      }
-    }
-  </script>
   <link rel="stylesheet" href="./builder.css">
+  <!-- Chart.js 추가 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="./js/builder.js" defer></script>
 </head>
 <body>
@@ -111,10 +104,6 @@
               <!-- 탭 영역은 비워둠 -->
             </div>
             <div class="editor-content" id="editor-content">
-              <div class="line-numbers">
-                <span>1</span>
-              </div>
-              <!-- 이 부분 제거하면 3D 모델 제거됨 (2/4): id="model-viewer" 부분을 지우고 <div class="code-area">로 변경 -->
               <div class="code-area" id="model-viewer">
                 <!-- 3D 모델 뷰어 영역 -->
               </div>

@@ -4,6 +4,9 @@
  */
 
 import { getPCRecommendation, extractPrice, formatPrice } from './api.js';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 // DOM 요소
 const chatMessages = document.getElementById('chat-messages');
@@ -37,11 +40,29 @@ const STORAGE_KEY = 'spckit_builder_state';
  * 초기화
  */
 function init() {
-  // 1. 상태 복원
-  loadState();
-
-  // 2. URL 파라미터 처리
+  // 0. 새 세션인지 확인 (URL에 new=true 파라미터가 있거나, 세션 스토리지에 플래그가 없으면 초기화)
   const urlParams = new URLSearchParams(window.location.search);
+  const isNewSession = urlParams.get('new') === 'true' || !sessionStorage.getItem('spckit_session_started');
+  
+  if (isNewSession) {
+    // 새 세션 시작: 모든 상태 초기화
+    localStorage.removeItem(STORAGE_KEY);
+    chatHistory = [];
+    selectedParts = [];
+    currentPhase = 'requirements';
+    buildStageIndex = 0;
+    sessionStorage.setItem('spckit_session_started', 'true');
+    
+    // 채팅 메시지 영역 초기화
+    chatMessages.innerHTML = '';
+    
+    console.log('새 세션 시작: 모든 상태 초기화됨');
+  } else {
+    // 기존 세션: 상태 복원
+    loadState();
+  }
+
+  // 1. URL 파라미터 처리
   const initialMessage = urlParams.get('message');
 
   if (initialMessage) {
@@ -63,8 +84,13 @@ function init() {
   sendBtn.addEventListener('click', handleSendClick);
   chatInput.addEventListener('keydown', handleKeyDown);
   homeBtn.addEventListener('click', () => {
+    // 홈으로 이동 시 세션 플래그 제거하여 다음 방문 시 새 세션으로 시작
+    sessionStorage.removeItem('spckit_session_started');
     window.location.href = 'index.html';
   });
+  
+  // 페이지 로드 시 새 세션으로 시작하려면 URL에 ?new=true 추가
+  // 또는 브라우저 새 탭/새 창에서 열면 자동으로 새 세션 시작
   
   // Start Build 버튼 리스너
   if (startBuildBtn) {
@@ -588,30 +614,311 @@ function createRecommendationCard(component) {
     .join('');
 
   card.innerHTML = `
-    <div class="card-header">
-      <div class="card-icon">${iconSvg}</div>
-      <div class="card-info">
-        <div class="card-category">${component.category}</div>
-        <div class="card-name" title="${component.name}">${component.name}</div>
-      </div>
+    <div class="card-main-content">
+        <div class="card-header">
+        <div class="card-icon">${iconSvg}</div>
+        <div class="card-info">
+            <div class="card-category">${component.category}</div>
+            <div class="card-name" title="${component.name}">${component.name}</div>
+        </div>
+        </div>
+        <div class="card-details">
+        <div class="card-tags">
+            ${tagsHtml}
+        </div>
+        <div class="card-price">${component.price}</div>
+        <button class="card-details-toggle" title="상세 정보">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 9l6 6 6-6"/>
+            </svg>
+        </button>
+        </div>
     </div>
-    <div class="card-details">
-      <div class="card-tags">
-        ${tagsHtml}
-      </div>
-      <div class="card-price">${component.price}</div>
+    <div class="card-expanded-panel">
+        <div class="ai-summary">
+            <div class="ai-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
+                    <path d="M12 6v6l4 2"/>
+                </svg>
+            </div>
+            <div class="ai-text"></div>
+        </div>
+        <div class="analysis-charts">
+            <div class="chart-container">
+                <div class="chart-title">가격 예측 추이</div>
+                <div class="chart-wrapper">
+                    <canvas class="price-chart"></canvas>
+                </div>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">성능 호환성 분석</div>
+                <div class="chart-wrapper">
+                    <canvas class="radar-chart"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
   `;
 
-  // 클릭 이벤트 - 부품 선택
-  card.addEventListener('click', (e) => {
-    // 이미 선택된 경우 무시하거나 해제 로직을 넣을 수 있음
+  // 클릭 이벤트 - 부품 선택 (메인 콘텐츠 영역만)
+  const mainContent = card.querySelector('.card-main-content');
+  mainContent.addEventListener('click', (e) => {
+    // 토글 버튼 클릭은 제외
+    if (e.target.closest('.card-details-toggle')) return;
+    
+    // 이미 선택된 경우 무시
     if (card.classList.contains('selected')) return;
     
     handleCardClick(e, card, component);
   });
 
+  // 토글 버튼 이벤트
+  const toggleBtn = card.querySelector('.card-details-toggle');
+  toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // 카드 선택 방지
+      const isExpanded = card.classList.toggle('expanded');
+      
+      if (isExpanded) {
+          renderCardDetails(card, component);
+      }
+  });
+
   return card;
+}
+
+/**
+ * 카드 상세 정보 렌더링 (AI 요약 & 차트)
+ */
+async function renderCardDetails(cardElement, component) {
+    const aiTextEl = cardElement.querySelector('.ai-text');
+    const priceCanvas = cardElement.querySelector('.price-chart');
+    const radarCanvas = cardElement.querySelector('.radar-chart');
+    
+    // 1. AI 요약 텍스트 시뮬레이션 (타이핑 효과)
+    if (!aiTextEl.dataset.loaded) {
+        aiTextEl.textContent = '';
+        const summary = generateMockAISummary(component);
+        let i = 0;
+        const typeInterval = setInterval(() => {
+            aiTextEl.textContent += summary.charAt(i);
+            i++;
+            if (i >= summary.length) {
+                clearInterval(typeInterval);
+                aiTextEl.dataset.loaded = 'true';
+            }
+        }, 20);
+    }
+
+    // 2. 차트 렌더링 (Chart.js)
+    if (!priceCanvas.dataset.loaded) {
+        renderPriceChart(priceCanvas);
+        priceCanvas.dataset.loaded = 'true';
+    }
+    
+    if (!radarCanvas.dataset.loaded) {
+        renderRadarChart(radarCanvas);
+        radarCanvas.dataset.loaded = 'true';
+    }
+}
+
+// 목업 AI 요약 생성기 (전문성 강화 - 카테고리별 맞춤)
+function generateMockAISummary(component) {
+    const category = component.category?.toUpperCase() || '';
+    const benchScore = Math.floor(Math.random() * 8000) + 15000;
+    const tdp = Math.floor(Math.random() * 50) + 65;
+    const clockSpeed = (Math.random() * 1.5 + 4.0).toFixed(1);
+    const temp = Math.floor(Math.random() * 15) + 55;
+    
+    const categoryTemplates = {
+        'CPU': [
+            `Cinebench R23 멀티: ${benchScore.toLocaleString()}점 | 싱글: ${Math.floor(benchScore/10)}점. 부스트 ${clockSpeed}GHz, TDP ${tdp}W. 풀로드 ${temp}°C 수준으로 공랭 쿨러로 충분히 대응 가능합니다.`,
+            `PassMark ${benchScore.toLocaleString()}점. ${clockSpeed}GHz 터보, ${tdp}W 설계. 게이밍 144Hz 안정 | 멀티태스킹 우수. 가성비 최상위 등급입니다.`
+        ],
+        'GPU': [
+            `3DMark Time Spy ${benchScore.toLocaleString()}점. VRAM 활용률 최적화로 1440p Ultra 90+ FPS, 4K 60 FPS 안정 지원. TGP ${tdp + 100}W, 듀얼팬 쿨링 시스템.`,
+            `1440p 게이밍 타겟 최적 모델. DLSS 3.0/FSR 2.0 지원으로 실효 성능 30% 향상. 레이트레이싱 코어 탑재.`
+        ],
+        'RAM': [
+            `XMP 3.0 지원, 지연 시간 CL${Math.floor(Math.random()*6)+14}. 듀얼채널 최대 대역폭 ${benchScore/500 | 0}GB/s. 게이밍/작업 병행 환경 권장.`,
+            `DDR5 최적화 다이, 저전압(1.1V) 동작. 오버클럭 잠재력 우수, 히트스프레더 장착으로 안정성 확보.`
+        ],
+        'SSD': [
+            `순차 읽기 ${(benchScore/3).toFixed(0)}MB/s | 쓰기 ${(benchScore/4).toFixed(0)}MB/s. NVMe Gen4 x4, DRAM 캐시 탑재. 내구성 TBW ${Math.floor(Math.random()*400)+600}TB.`,
+            `PCIe 4.0 풀스펙. 랜덤 4K 성능 최적화로 OS/게임 로딩 체감 속도 우수. SLC 캐싱으로 대용량 복사 시에도 속도 유지.`
+        ],
+        'MAINBOARD': [
+            `VRM ${Math.floor(Math.random()*4)+10}+2페이즈 설계. DDR5 최대 ${Math.floor(Math.random()*1400)+6400}MHz 지원. M.2 슬롯 ${Math.floor(Math.random()*2)+2}개, USB 3.2 Gen2 다수 제공.`,
+            `오버클럭 지원 칩셋. BIOS 최적화로 안정성 우수. 통합 I/O 쉴드, RGB 헤더 3개 제공.`
+        ]
+    };
+    
+    // 카테고리에 맞는 템플릿 선택 또는 기본 템플릿
+    const templates = categoryTemplates[category] || [
+        `벤치마크 점수 ${benchScore.toLocaleString()}점 기록. 동급 대비 ${Math.floor(Math.random()*15)+10}% 높은 효율. TDP ${tdp}W 설계로 전성비 우수.`,
+        `성능/가격 균형 최적화 제품. 실사용 테스트에서 안정성 검증 완료. 3년 무상 A/S 지원.`
+    ];
+    
+    return templates[Math.floor(Math.random() * templates.length)];
+}
+
+// 가격 추이 차트 (Line - 직선형, 현재 시점 + 1개월 뒤 예측)
+function renderPriceChart(canvas) {
+    const labels = ['5개월 전', '4개월 전', '3개월 전', '2개월 전', '1개월 전', '현재', '1개월 뒤(예측)'];
+    const basePrice = Math.floor(Math.random() * 50000) + 180000;
+    
+    // 과거 데이터 생성 (현재 기준 변동)
+    const data = [];
+    for (let i = 5; i >= 1; i--) {
+        const variation = Math.floor(Math.random() * 20000) - 10000;
+        data.push(basePrice + variation);
+    }
+    data.push(basePrice); // 현재 가격
+    
+    // 1개월 뒤 예측 (약간의 하락 트렌드 시뮬레이션)
+    const predictedPrice = basePrice - Math.floor(Math.random() * 8000) - 2000;
+    data.push(predictedPrice);
+    
+    const chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '가격 변동',
+                data: data,
+                borderColor: '#1488fc',
+                backgroundColor: 'rgba(20, 136, 252, 0.08)',
+                borderWidth: 1.5,
+                tension: 0, // 직선형
+                fill: true,
+                pointRadius: (ctx) => {
+                    if (ctx.dataIndex === 5) return 5; // 현재 시점
+                    if (ctx.dataIndex === 6) return 4; // 예측
+                    return 2;
+                },
+                pointBackgroundColor: (ctx) => {
+                    if (ctx.dataIndex === 5) return '#fff'; // 현재
+                    if (ctx.dataIndex === 6) return '#5af78e'; // 예측 (녹색)
+                    return '#1488fc';
+                },
+                pointBorderColor: (ctx) => ctx.dataIndex === 6 ? '#5af78e' : '#1488fc',
+                pointBorderWidth: 1.5,
+                segment: {
+                    borderDash: (ctx) => ctx.p1DataIndex === 6 ? [4, 4] : undefined // 예측 구간 점선
+                }
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { 
+                    mode: 'index', 
+                    intersect: false,
+                    backgroundColor: 'rgba(11, 12, 15, 0.95)',
+                    titleColor: '#fff',
+                    bodyColor: '#ccc',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    titleFont: { size: 10 },
+                    bodyFont: { size: 10 },
+                    padding: 6,
+                    callbacks: {
+                        label: (ctx) => `${ctx.parsed.y.toLocaleString()}원`
+                    }
+                }
+            },
+            scales: {
+                x: { 
+                    display: true,
+                    grid: { display: false },
+                    ticks: { 
+                        color: '#73737b', 
+                        font: { size: 8 },
+                        maxRotation: 45,
+                        minRotation: 0
+                    }
+                },
+                y: { 
+                    display: false,
+                    min: Math.min(...data) * 0.95,
+                    max: Math.max(...data) * 1.05
+                }
+            },
+            interaction: {
+                mode: 'nearest',
+                axis: 'x',
+                intersect: false
+            }
+        }
+    });
+    
+    // 리사이즈 처리를 위해 canvas에 차트 인스턴스 저장
+    canvas._chartInstance = chart;
+}
+
+// 성능 분석 차트 (Horizontal Bar - 가로 바 차트)
+function renderRadarChart(canvas) {
+    const chart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: ['게이밍', '작업 효율', '발열', '전력 효율', '가성비'],
+            datasets: [{
+                label: '성능 지수',
+                data: [
+                    Math.floor(Math.random() * 20) + 80,
+                    Math.floor(Math.random() * 30) + 70,
+                    Math.floor(Math.random() * 20) + 80,
+                    Math.floor(Math.random() * 20) + 80,
+                    Math.floor(Math.random() * 15) + 85
+                ],
+                backgroundColor: [
+                    'rgba(20, 136, 252, 0.85)',
+                    'rgba(90, 247, 142, 0.85)', 
+                    'rgba(255, 200, 60, 0.85)',
+                    'rgba(154, 237, 254, 0.85)',
+                    'rgba(255, 99, 132, 0.85)'
+                ],
+                borderRadius: 3,
+                barThickness: 10
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(11, 12, 15, 0.95)',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    titleFont: { size: 10 },
+                    bodyFont: { size: 10 },
+                    padding: 6,
+                    callbacks: {
+                        label: (ctx) => `${ctx.parsed.x}점`
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    display: false,
+                    max: 100
+                },
+                y: {
+                    grid: { display: false },
+                    ticks: { 
+                        color: '#b0b0b0',
+                        font: { size: 9, weight: '500' }
+                    }
+                }
+            }
+        }
+    });
+    
+    canvas._chartInstance = chart;
 }
 
 /**
@@ -874,32 +1181,49 @@ function highlightSelectedInRecommendation() {
 init();
 
 /* ========================================
- * 이 부분 제거하면 3D 모델 제거됨 (3/4)
- * init3DViewer() 함수 전체와 하단의 setTimeout 호출 제거
+ * 3D 뷰어 초기화 함수 (개선된 버전)
  * ======================================== */
+let viewerState = {
+    scene: null,
+    camera: null,
+    renderer: null,
+    controls: null,
+    model: null,
+    container: null,
+    currentBackground: 0,
+    initialCameraPosition: null,
+    initialCameraTarget: null
+};
+
+// 배경 옵션 정의
+const BACKGROUND_OPTIONS = [
+    { name: '검은 공간', type: 'color', value: 0x000000 },
+    { name: '탁상 위', type: 'desk', value: null },
+    { name: '흰 배경', type: 'color', value: 0xffffff },
+    { name: '모니터와 함께', type: 'monitor', value: null },
+    { name: '방 인테리어', type: 'room', value: null }
+];
+
 // 3D 뷰어 초기화 함수
 async function init3DViewer() {
+    const container = document.getElementById('model-viewer');
+    if (!container) {
+        console.error('3D 뷰어 컨테이너를 찾을 수 없습니다');
+        return;
+    }
+    
     try {
         console.log('3D 뷰어 초기화 시작...');
-        const container = document.getElementById('model-viewer');
-        if (!container) {
-            console.error('3D 뷰어 컨테이너를 찾을 수 없습니다');
-            return;
-        }
-        console.log('컨테이너 찾음:', container.clientWidth, 'x', container.clientHeight);
-
-        // Three.js 모듈 동적 import
-        console.log('Three.js 로드 중...');
-        const THREE = await import('three');
-        console.log('Three.js 로드 완료');
-        const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-        console.log('GLTFLoader 로드 완료');
-        const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
-        console.log('OrbitControls 로드 완료');
-
+        viewerState.container = container;
+        
+        // 컨테이너 스크롤 방지
+        container.style.overflow = 'hidden';
+        container.style.position = 'relative';
+        
         // Scene 설정
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
+        viewerState.scene = scene;
+        setBackground(0); // 초기 배경 설정
 
         // Camera 설정
         const camera = new THREE.PerspectiveCamera(
@@ -910,109 +1234,290 @@ async function init3DViewer() {
         );
         camera.position.set(0, 2, 5);
         camera.lookAt(0, 0, 0);
+        viewerState.camera = camera;
 
         // Renderer 설정
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(container.clientWidth, container.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        
+        // 기존 캔버스 제거 후 추가 (재진입 안전장치)
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
         container.appendChild(renderer.domElement);
+        viewerState.renderer = renderer;
+        
+        // Canvas 스타일 설정
+        renderer.domElement.style.display = 'block';
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
 
-        // OrbitControls 추가 (마우스로 회전, 확대/축소 가능)
+        // OrbitControls 추가
         const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true; // 부드러운 움직임
+        controls.enableDamping = true;
         controls.dampingFactor = 0.05;
-        controls.minDistance = 0.5; // 최소 줌 거리 (더 가까이)
-        controls.maxDistance = 50; // 최대 줌 거리 (더 멀리)
-        controls.autoRotate = false; // 자동 회전 비활성화
+        controls.minDistance = 0.5;
+        controls.maxDistance = 50;
+        controls.enablePan = true;
+        viewerState.controls = controls;
 
-        // 조명 추가 (PC 내부를 최대한 밝게)
-        const ambientLight = new THREE.AmbientLight(0xffffff, 3.5); // 주변광 극대화
-        scene.add(ambientLight);
+        // 컨트롤 설정 (이벤트 리스너)
+        setupControls(renderer.domElement, controls);
+        
+        // 조명 설정
+        setupLights(scene);
 
-        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 3.5); // 메인 조명 극대화
-        directionalLight1.position.set(5, 5, 5);
-        scene.add(directionalLight1);
-
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 3.0); // 보조 조명 극대화
-        directionalLight2.position.set(-5, 3, -5);
-        scene.add(directionalLight2);
-
-        const directionalLight3 = new THREE.DirectionalLight(0xffffff, 2.5); // 하단 조명 극대화
-        directionalLight3.position.set(0, -5, 5);
-        scene.add(directionalLight3);
-
-        const directionalLight4 = new THREE.DirectionalLight(0xffffff, 2.5); // 정면 조명 극대화
-        directionalLight4.position.set(0, 0, 8);
-        scene.add(directionalLight4);
-
-        const directionalLight5 = new THREE.DirectionalLight(0xffffff, 2.0); // 5번째 조명 (상단)
-        directionalLight5.position.set(0, 8, 0);
-        scene.add(directionalLight5);
+        // UI 생성
+        create3DUI(container);
 
         // GLB 모델 로드
         const loader = new GLTFLoader();
-        let model = null;
-
+        
         console.log('GLB 파일 로드 시작: ./images/custom_gaming_pc.glb');
         loader.load(
             './images/custom_gaming_pc.glb',
             (gltf) => {
-                console.log('GLB 로드 성공!', gltf);
-                model = gltf.scene;
+                console.log('GLB 로드 성공!');
+                const model = gltf.scene;
                 scene.add(model);
+                viewerState.model = model;
                 
-                // 모델 크기 조정
-                const box = new THREE.Box3().setFromObject(model);
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const scale = 2 / maxDim;
-                model.scale.setScalar(scale);
-                console.log('모델 크기:', size, '스케일:', scale);
-
-                // 모델 중앙 정렬
-                const center = box.getCenter(new THREE.Vector3());
-                model.position.sub(center.multiplyScalar(scale));
-
+                // 모델 크기 및 카메라 조정
+                fitCameraToModel(camera, controls, model);
+                
                 console.log('3D 모델 로드 및 설정 완료');
             },
-            (progress) => {
-                if (progress.total > 0) {
-                    const percent = (progress.loaded / progress.total * 100).toFixed(2);
-                    console.log('로딩 중:', percent + '%');
-                }
-            },
+            undefined,
             (error) => {
                 console.error('3D 모델 로드 오류:', error);
-                console.error('파일 경로 확인 필요: ./images/custom_gaming_pc.glb');
+                const errorMsg = document.createElement('div');
+                errorMsg.style.cssText = 'position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#ff6b6b; background:rgba(0,0,0,0.8); padding:10px; border-radius:4px;';
+                errorMsg.textContent = '3D 모델을 불러올 수 없습니다.';
+                container.appendChild(errorMsg);
             }
         );
 
         // 애니메이션 루프
         function animate() {
             requestAnimationFrame(animate);
-            
-            // OrbitControls 업데이트 (자동 회전 포함)
             controls.update();
-            
             renderer.render(scene, camera);
         }
         animate();
 
         // 리사이즈 처리
-        window.addEventListener('resize', () => {
+        const handleResize = () => {
+            if (!container || !camera || !renderer) return;
             const width = container.clientWidth;
             const height = container.clientHeight;
             
-            camera.aspect = width / height;
-            camera.updateProjectionMatrix();
-            
-            renderer.setSize(width, height);
-        });
+            if (width > 0 && height > 0) {
+                camera.aspect = width / height;
+                camera.updateProjectionMatrix();
+                renderer.setSize(width, height);
+            }
+        };
+        
+        if (typeof ResizeObserver !== 'undefined') {
+            const resizeObserver = new ResizeObserver(handleResize);
+            resizeObserver.observe(container);
+        } else {
+            window.addEventListener('resize', handleResize);
+        }
 
         console.log('3D 뷰어 초기화 완료');
     } catch (error) {
         console.error('3D 뷰어 초기화 오류:', error);
+        container.innerHTML = `<div style="color:red; padding:20px;">Viewer Error: ${error.message}</div>`;
     }
+}
+
+// 컨트롤 이벤트 설정
+function setupControls(domElement, controls) {
+    let isCtrlPressed = false;
+    
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            isCtrlPressed = true;
+            controls.enableRotate = false;
+            controls.enablePan = true;
+        }
+    });
+    
+    document.addEventListener('keyup', (e) => {
+        if (!e.ctrlKey && !e.metaKey) {
+            isCtrlPressed = false;
+            controls.enableRotate = true;
+            controls.enablePan = false;
+        }
+    });
+}
+
+// 카메라를 모델에 맞게 자동 조정
+function fitCameraToModel(camera, controls, model) {
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    // 모델 스케일 조정 (약 3단위 크기로 맞춤)
+    const targetSize = 3;
+    const scale = targetSize / maxDim;
+    model.scale.setScalar(scale);
+    
+    // 스케일 적용 후 다시 박스 계산하여 중앙 정렬
+    box.setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.sub(center);
+    
+    // 카메라 위치 설정
+    camera.position.set(3, 3, 5);
+    camera.lookAt(0, 0, 0);
+    
+    controls.target.set(0, 0, 0);
+    controls.update();
+    
+    viewerState.initialCameraPosition = camera.position.clone();
+    viewerState.initialCameraTarget = controls.target.clone();
+}
+
+// 조명 설정 함수
+function setupLights(scene) {
+    // 기존 조명 제거
+    const lightsToRemove = [];
+    scene.traverse((child) => {
+        if (child instanceof THREE.Light) {
+            lightsToRemove.push(child);
+        }
+    });
+    lightsToRemove.forEach(light => scene.remove(light));
+
+    // 새로운 조명 추가
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    scene.add(ambientLight);
+
+    const directionalLight1 = new THREE.DirectionalLight(0xffffff, 2.0);
+    directionalLight1.position.set(5, 5, 5);
+    directionalLight1.castShadow = true;
+    scene.add(directionalLight1);
+
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.5);
+    directionalLight2.position.set(-5, 3, -5);
+    scene.add(directionalLight2);
+
+    const directionalLight3 = new THREE.DirectionalLight(0xffffff, 1.0);
+    directionalLight3.position.set(0, -5, 5);
+    scene.add(directionalLight3);
+}
+
+// 배경 설정 함수
+function setBackground(index) {
+    if (!viewerState.scene) return;
+    
+    viewerState.currentBackground = index;
+    const option = BACKGROUND_OPTIONS[index];
+    
+    if (option.type === 'color') {
+        viewerState.scene.background = new THREE.Color(option.value);
+        viewerState.scene.environment = null;
+    } else {
+        // 복잡한 배경은 나중에 구현 (일단 검은색으로)
+        viewerState.scene.background = new THREE.Color(0x1a1a1a);
+        viewerState.scene.environment = null;
+    }
+}
+
+// 3D UI 생성 함수
+function create3DUI(container) {
+    // 상단 가이드 (플로팅) - 전문적인 마우스/키캡 아이콘으로 변경
+    const topGuide = document.createElement('div');
+    topGuide.id = 'viewer-top-guide';
+    topGuide.className = 'viewer-guide-top';
+    topGuide.innerHTML = `
+        <div class="guide-item">
+            <div class="guide-icon-group">
+                <div class="keycap">Ctrl</div>
+                <span>+</span>
+                <svg class="mouse-icon" viewBox="0 0 24 32">
+                    <rect x="2" y="2" width="20" height="28" rx="10" ry="10" />
+                    <line x1="12" y1="2" x2="12" y2="14" />
+                    <line x1="2" y1="14" x2="22" y2="14" />
+                    <path class="active" d="M2 14h10v-12c-5 0 -10 5 -10 12z" />
+                </svg>
+            </div>
+            <span>시점 이동</span>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-group">
+                <svg class="mouse-icon" viewBox="0 0 24 32">
+                    <rect x="2" y="2" width="20" height="28" rx="10" ry="10" />
+                    <line x1="12" y1="2" x2="12" y2="14" />
+                    <line x1="2" y1="14" x2="22" y2="14" />
+                    <rect class="wheel active" x="10.5" y="6" width="3" height="6" rx="1.5" />
+                </svg>
+            </div>
+            <span>확대/축소</span>
+        </div>
+        <div class="guide-item">
+            <div class="guide-icon-group">
+                <svg class="mouse-icon" viewBox="0 0 24 32">
+                    <rect x="2" y="2" width="20" height="28" rx="10" ry="10" />
+                    <line x1="12" y1="2" x2="12" y2="14" />
+                    <line x1="2" y1="14" x2="22" y2="14" />
+                    <path class="active" d="M2 14h10v-12c-5 0 -10 5 -10 12z" />
+                </svg>
+            </div>
+            <span>회전</span>
+        </div>
+    `;
+    container.appendChild(topGuide);
+
+    // 우측 하단 컨트롤 (플로팅)
+    const bottomControls = document.createElement('div');
+    bottomControls.id = 'viewer-bottom-controls';
+    bottomControls.className = 'viewer-controls-bottom';
+    bottomControls.innerHTML = `
+        <button id="viewer-reset-btn" class="viewer-btn-reset" title="시점 초기화">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                <path d="M3 21v-5h5"/>
+            </svg>
+        </button>
+        <div class="viewer-bg-selector">
+            ${BACKGROUND_OPTIONS.map((opt, idx) => `
+                <button class="viewer-bg-btn ${idx === 0 ? 'active' : ''}" 
+                        data-bg-index="${idx}" 
+                        title="${opt.name}">
+                    <span class="bg-indicator"></span>
+                </button>
+            `).join('')}
+        </div>
+    `;
+    container.appendChild(bottomControls);
+
+    // 이벤트 리스너
+    const resetBtn = document.getElementById('viewer-reset-btn');
+    resetBtn.addEventListener('click', resetViewpoint);
+
+    const bgButtons = bottomControls.querySelectorAll('.viewer-bg-btn');
+    bgButtons.forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+            bgButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            setBackground(idx);
+        });
+    });
+}
+
+// 시점 최적화 함수
+function resetViewpoint() {
+    if (!viewerState.camera || !viewerState.controls || !viewerState.model) return;
+    
+    fitCameraToModel(viewerState.camera, viewerState.controls, viewerState.model);
 }
 
 // 이 부분도 제거 (3D 뷰어 호출)

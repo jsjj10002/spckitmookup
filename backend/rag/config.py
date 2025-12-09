@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # .env 파일 로드 (프로젝트 루트에서)
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 # Gemini API 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
