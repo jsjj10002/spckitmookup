@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Spckit AI: PC Builder</title>
+  <link rel="icon" type="image/svg+xml" href="./images/spckit-logo.svg">
+  <!-- 이 부분 제거하면 3D 모델 제거됨 (1/4) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="./builder.css">
+  <script type="module" src="./js/builder.js" defer></script>
+</head>
+<body>
+  <!-- 전체 컨테이너 -->
+  <div class="app-container">
+    <!-- 헤더: 브레드크럼과 네비게이션 -->
+    <header class="header">
+      <div class="breadcrumb">
+        <button class="breadcrumb-btn" id="home-btn">
+          <svg class="icon-bolt" width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <text x="5" y="18" font-size="18" font-weight="800" font-style="italic" fill="white">S</text>
+            <text x="15.5" y="10" font-size="12" font-weight="700" font-style="italic" font-family="'Inter Display','Inter',sans-serif" fill="#e8e8e8">2</text>
+          </svg>
+        </button>
+        <span class="separator">/</span>
+        <button class="breadcrumb-btn avatar-btn">
+          <img src="./images/mingyu.png" alt="User" class="avatar">
+          <svg class="icon-chevron" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 6l4 4 4-4"/>
+          </svg>
+        </button>
+        <span class="separator">/</span>
+        <div class="breadcrumb-title">
+          <span>PC Build Recommendation</span>
+          <svg class="icon-external" width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <path d="M11 3v8M3 11h8"/>
+          </svg>
+        </div>
+      </div>
+    </header>
+
+    <!-- 메인 콘텐츠 영역 -->
+    <div class="main-content">
+      <!-- 왼쪽: 채팅 영역 -->
+      <aside class="chat-panel">
+        <!-- 채팅 메시지 영역 -->
+        <div class="chat-messages" id="chat-messages">
+        </div>
+
+        <!-- 채팅 입력 영역 (sticky) -->
+        <div class="chat-input-area">
+          <!-- 토큰 정보 바 -->
+          <!-- 토큰 정보 바 <div class="token-bar">
+            <span class="token-text">42K daily tokens remaining.</span>
+            <button class="upgrade-btn">Switch to Pro for 33x more usage</button>
+            <button class="close-btn">×</button>
+          </div> -->
+
+          <!-- 입력 박스 -->
+          <div class="input-container">
+            <textarea class="chat-textarea" id="chat-input" placeholder="PC 부품 추천을 받으려면 메시지를 입력하세요..." rows="3"></textarea>
+            <div class="input-actions">
+              <button class="action-btn attach-btn">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M8 3v10M3 8h10"/>
+                </svg>
+              </button>
+              <div class="action-group">
+                <button class="pill-btn">
+                  <img src="./images/effect1.png" alt="Select" style="width: 16px; height: 16px; margin-right: 4px; filter: brightness(0) invert(1);">
+                  Select
+                </button>
+                <!-- Plan 버튼을 Start Build 버튼으로 변경 -->
+                <button class="pill-btn start-build-btn" id="start-build-btn">Plan</button>
+              </div>
+              <button class="send-btn" id="send-btn">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="white">
+                  <path d="M2 2l12 6-12 6V9l8-1-8-1V2z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- 오른쪽: 코드 에디터 및 프리뷰 영역 -->
+      <main class="editor-panel">
+
+
+        <!-- 에디터 본문 -->
+        <div class="editor-body">
+          <!-- 파일 트리 (선택된 부품 리스트) -->
+          <div class="file-tree">
+            <div class="file-tree-header">
+              <button class="tab active">Selected Parts</button>
+            </div>
+            <div class="file-list" id="file-list">
+            </div>
+          </div>
+
+          <!-- 코드 에디터 (빈 공간) -->
+          <div class="code-editor">
+            <div class="editor-tab-bar">
+              <!-- 탭 영역은 비워둠 -->
+            </div>
+            <div class="editor-content" id="editor-content">
+              <div class="line-numbers">
+                <span>1</span>
+              </div>
+              <!-- 이 부분 제거하면 3D 모델 제거됨 (2/4): id="model-viewer" 부분을 지우고 <div class="code-area">로 변경 -->
+              <div class="code-area" id="model-viewer">
+                <!-- 3D 모델 뷰어 영역 -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단 터미널 (부품 추천 리스트) -->
+        <div class="terminal-panel">
+          <div class="terminal-tabs">
+            <!-- Bolt 탭을 Next Step 버튼으로 변경 -->
+            <button class="terminal-tab active" id="next-step-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18l6-6-6-6"/>
+              </svg>
+              Next Step
+            </button>
+            
+            <button class="terminal-tab">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 18l6-6-6-6"/>
+              </svg>
+              Details
+            </button>
+            <button class="terminal-action close">×</button>
+          </div>
+          <!-- 로딩 오버레이 추가 -->
+          <div class="terminal-loading" id="terminal-loading" style="display: none;">
+            <div class="terminal-loading-content">
+              <div class="spinner-small"></div>
+              <span id="terminal-loading-text">Loading...</span>
+            </div>
+          </div>
+          <div class="terminal-content" id="terminal-content">
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

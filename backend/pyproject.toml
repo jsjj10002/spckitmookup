@@ -1,0 +1,48 @@
+[project]
+name = "spckit-ai-backend"
+version = "0.1.0"
+description = "PC 부품 추천 RAG 시스템 백엔드"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=0.1.0",
+    "chromadb>=0.5.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "pymysql>=1.1.0",
+    "sqlparse>=0.5.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.66.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "loguru>=0.7.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rag", "api", "scripts"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+

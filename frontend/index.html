@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spckit AI: PC Builder</title>
+    <link rel="icon" type="image/svg+xml" href="./images/spckit-logo.svg">
+    <link rel="stylesheet" href="landing.css">
+    <script src="./js/landing.js" defer></script>
+</head>
+<body>
+    <!-- 헤더 (Figma 기준) -->
+    <header class="header">
+        <div class="header-container">
+            <!-- 로고: SVG 형식 사용 -->
+            <div class="logo">
+                <a href="index.html">
+                    <img src="images/spckit-logo.svg" alt="Spckit 로고" />
+                </a>
+            </div>
+
+            <!-- 중앙 네비게이션 -->
+            <nav class="nav-menu" aria-label="Primary">
+                <a href="https://discord.com/invite/stackblitz">Community</a>
+                <a href="https://bolt.new/enterprise">Enterprise</a>
+                <a href="#resources" class="nav-resources">Resources</a>
+                <a href="https://bolt.new/careers">Careers</a>
+                <a href="https://bolt.new/pricing">Pricing</a>
+            </nav>
+
+            <!-- 우측 액션: 공지, 소셜, 로그인, 시작하기 -->
+            <div class="header-actions">
+                <!-- 공지 버튼 (간단한 링크 형태) -->
+
+                <div class="social-links">
+                    <!-- Discord 아이콘: Simple Icons CDN 사용 -->
+                    <a href="https://discord.com/invite/stackblitz" class="social-icon" title="Discord" aria-label="Discord">
+                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/discord.svg" alt="Discord" />
+                    </a>
+                    <!-- X (Twitter) 아이콘: Simple Icons CDN 사용 -->
+                    <a href="https://x.com/boltdotnew" class="social-icon" title="Twitter/X" aria-label="Twitter/X">
+                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/x.svg" alt="X (Twitter)" />
+                    </a>
+                    <!-- Reddit 아이콘: Simple Icons CDN 사용 -->
+                    <a href="https://www.reddit.com/r/boltnewbuilders/" class="social-icon" title="Reddit" aria-label="Reddit">
+                        <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/reddit.svg" alt="Reddit" />
+                    </a>
+                </div>
+
+                <a href="#login" class="btn-text">sign in</a>
+                <a href="#get-started" class="btn-primary">Get started</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <div class="main-content">
+        <!-- (히어로 섹션은 background-section 내부로 이동됨) -->
+
+        <!-- 배경 섹션 (채팅부터 푸터까지) -->
+        <div class="background-section">
+            <div class="main-background">
+                <!-- 배경 이미지: 원형 그라데이션 배경 (PNG 또는 SVG) -->
+                <img src="./images/round.png" alt="배경" class="main-bg-img" />
+            </div>
+
+            <!-- 히어로 섹션 (background-section 내부로 통합되어 동일한 배경 사용) -->
+            <section class="hero">
+                <div class="hero-content">
+                    <!-- 공지사항 배지 -->
+                    <a href="https://x.com/boltdotnew/status/1973063093849567591" class="announcement-badge">  
+                         <!-- introducing bolt 배너 -->
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" class="announcement-logo">
+                            <text x="5" y="18" font-size="18" font-weight="800" font-style="italic" fill="white">S</text>
+                            <text x="15.5" y="10" font-size="12" font-weight="700" font-style="italic" font-family="'Inter Display','Inter',sans-serif" fill="#e8e8e8">2</text>
+                        </svg>
+                        <span>Introducing Spckit AI</span>
+                        <svg width="14" height="14" viewBox="0 0 12 12" fill="currentColor">
+                            <path d="M1 1 L11 11 M11 1 L1 11"/>
+                        </svg>
+                    </a>
+
+                    <!-- 메인 제목 -->
+                    <h1 class="hero-title">
+                        What will you
+                        <span style="color: #2ba6ff;">build</span>
+                        today?
+                    </h1>
+
+                    <!-- 부제목 -->
+                    <p class="hero-subtitle"> Try building your own PC.</p>
+                </div>
+            </section>
+
+            <!-- 채팅 입력 -->
+            <div class="chat-container">
+                <div class="chat-box">
+                    <div class="chat-input-wrapper">
+                        <div class="chat-input" id="landing-chat-input" contenteditable="true" placeholder="PC 부품 추천을 받으려면 메시지를 입력하세요..."></div>
+                        <button class="chat-send" id="landing-send-btn">Bulid Now</button>
+                    </div>
+                    <div class="chat-footer">
+                        <span class="chat-info">100k tokens remaining.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 임포트 섹션 -->
+            <section class="import-section">
+                <div class="import-options">
+                    <span class="import-label">or import from</span>
+                    <div class="import-buttons">
+                        <button class="import-btn" id="my-specs-btn">
+                            <img src="./images/figma.png" alt="Figma">
+                            figma
+                        </button>
+                        <button class="import-btn">
+                            <img src="./images/github.png" alt="GitHub" class="icon-github">
+                            GitHub
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 신뢰 섹션 -->
+                <!-- <div class="trusted-section"> 
+                    <p class="trusted-label">The #1 professional vibe coding tool trusted by</p>
+                    <div class="trusted-logos">
+                        <img src="http://localhost:3845/assets/14167cd476d771b5eda91a81d2364ac769d1e1eb.svg" alt="Partner 1">
+                        <img src="http://localhost:3845/assets/5a98e9aef92d44cf5bd3a955f4c8f77d1c8e4804.svg" alt="Partner 2">
+                        <img src="http://localhost:3845/assets/4e8a5b2924960fa7b4dc73f28a0ef1f41c022501.svg" alt="Partner 3">
+                        <img src="http://localhost:3845/assets/21fb65871c1a406158d6458c97d474ace52ecc4d.svg" alt="Partner 4">
+                        <img src="http://localhost:3845/assets/c6e58b5cb07c9c6bfdf0a79a0029358fac3f7c53.svg" alt="Partner 5">
+                        <img src="http://localhost:3845/assets/4d954e42505c1911efc45831bc45c7d41c596b4a.svg" alt="Partner 6">
+                        <img src="http://localhost:3845/assets/8d663452f0de0bd3db52c83c8e81567e1135eb0e.svg" alt="Partner 7">
+                    </div>
+                </div> -->
+            </section>
+
+        </div> <!-- closes background-section -->
+
+            <!-- 푸터 -->
+            <footer class="footer" id="resources">
+                <div class="footer-container">
+                    <!-- 푸터 로고 -->
+                    <div class="footer-logo">
+                        <a href="index.html">
+                            <img src="images/spckit-logo.svg" alt="Spckit.ai" />
+                        </a>
+                    </div>
+
+                    <!-- 푸터 링크 -->
+                    <div class="footer-nav">
+                        <!-- 리소스 섹션 -->
+                        <div class="footer-section">
+                            <h4>Resources</h4>
+                            <ul>
+                                <li><a href="https://support.bolt.new/">Support</a></li>
+                                <li><a href="https://bolt.new/blog">Blog</a></li>
+                                <li><a href="https://bolt.new/gallery">Gallery</a></li>
+                                <li><a href="https://status.bolt.new/">Status</a></li>
+                            </ul>
+                        </div>
+
+                        <!-- 회사 섹션 -->
+                        <div class="footer-section">
+                            <h4>Company</h4>
+                            <ul>
+                                <li><a href="https://bolt.new/careers">Careers</a></li>
+                                <li><a href="https://stackblitz.com/privacy-policy">Privacy</a></li>
+                                <li><a href="https://stackblitz.com/terms-of-service">Terms</a></li>
+                            </ul>
+                        </div>
+
+                        <!-- 소셜 섹션 -->
+                        <div class="footer-section">
+                            <h4>Social</h4>
+                            <ul>
+                                <li><a href="https://discord.com/invite/stackblitz">Discord</a></li>
+                                <li><a href="https://www.linkedin.com/company/stackblitz">LinkedIn</a></li>
+                                <li><a href="https://www.youtube.com/@BoltDotNew">YouTube</a></li>
+                                <li><a href="https://x.com/boltdotnew">Twitter/X</a></li>
+                                <li><a href="https://www.instagram.com/boltdotnew/">Instagram</a></li>
+                                <li><a href="https://www.reddit.com/r/boltnewbuilders/">Reddit</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 저작권 -->
+                <div class="footer-bottom">
+                    <p>&copy; 2025 StackBlitz - All rights reserved.</p>
+                </div>
+            </footer>
+    </div><!-- closes main-content -->
+    </body>
+</html>

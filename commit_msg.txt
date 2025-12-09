@@ -1,0 +1,29 @@
+chore: Complete project documentation and deployment infrastructure
+
+- Reorganize docs into docs/ directory
+  - Move all markdown files to docs/
+  - Add INDEX.md for documentation navigation
+  - Add DEPLOYMENT_GUIDE.md for production deployment
+
+- Build CI/CD pipeline
+  - Add GitHub Actions workflows
+  - Configure Vercel auto-deployment
+  - Configure GCP Cloud Run deployment
+
+- Deployment configuration
+  - Add vercel.json with CDN caching
+  - Prepare Dockerfile
+  - Improve environment variable management
+
+- Improve Git management
+  - Optimize .gitignore (Python, ChromaDB, backup)
+  - Optimize .dockerignore (production)
+  - Add .gitattributes (line ending normalization)
+  - Remove ChromaDB from Git tracking (local only)
+
+- Documentation restructure
+  - Update README.md doc links
+  - Rewrite backend/README.md
+  - Add docs/INDEX.md with role-based guides
+  - Organize 10 documentation files
+

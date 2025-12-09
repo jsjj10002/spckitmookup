@@ -1,0 +1,5 @@
+{
+  "name": "Spckit AI: PC Builder",
+  "description": "An AI-powered chat application that provides custom PC build recommendations. Users can describe their needs and budget to receive detailed component suggestions and analysis.",
+  "requestFramePermissions": []
+}

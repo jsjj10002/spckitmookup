@@ -1,0 +1,18 @@
+{
+  "name": "spckit-ai-pc-builder",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite serve frontend --port 3000",
+    "build": "npm run copy-files",
+    "preview": "vite preview --outDir dist",
+    "copy-files": "node scripts/build.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.0"
+  },
+  "devDependencies": {
+    "vite": "^6.2.0"
+  }
+}

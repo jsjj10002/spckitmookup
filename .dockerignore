@@ -1,0 +1,101 @@
+# 의존성
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 빌드 출력
+dist
+dist-ssr
+build
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv
+ENV
+env
+backend/.venv
+backend/venv
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+.eggs
+
+# ChromaDB (벡터 데이터베이스 - 로컬 데이터, 프로덕션에서 재생성)
+backend/chroma_db
+*.sqlite3
+
+# 개발 파일
+.vscode
+.idea
+*.local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+backend/.env.local
+
+# 백업 폴더 (이전 버전, 프로덕션 불필요)
+backup
+
+# 테스트
+coverage
+.nyc_output
+
+# 기타
+.DS_Store
+*.log
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+Thumbs.db
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# 문서 (배포 시 불필요, 필요한 문서만 선택적 포함)
+# README.md는 포함 (주석 처리)
+# DEPLOYMENT.md는 포함 (주석 처리)
+docs
+SUMMARY.md
+PROJECT_STRUCTURE.md
+CLEANUP_SUMMARY.md
+MIGRATION_SUMMARY.md
+*.zip
+test.txt
+dtest2.txt
+
+# SQL 원본 데이터 (프로덕션에서 불필요, 초기 데이터는 별도 관리)
+backend/data/*.sql
+backend/data/*.pdf
+
+# 연구 및 개발 파일
+research
+
+# 임시 파일
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 배치 스크립트 (Windows 전용, 프로덕션에서 불필요)
+*.bat
+
+# TypeScript 설정 (빌드 시에만 필요)
+tsconfig.json
+
+# Vite 설정 (개발 환경 전용)
+vite.config.ts
