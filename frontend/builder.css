@@ -547,8 +547,9 @@ button {
 .editor-content {
   flex: 1;
   display: flex;
-  overflow: auto;
+  overflow: hidden;
   background: var(--color-bg-secondary);
+  position: relative;
 }
 
 .line-numbers {
@@ -581,12 +582,181 @@ button {
   width: 100%;
   height: 100%;
   min-height: 815px;
+  position: relative;
+  overflow: hidden;
 }
 
 #model-viewer canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
+  touch-action: none;
+}
+
+/* 3D 뷰어 플로팅 UI */
+.viewer-guide-top {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 16px;
+  background: rgba(11, 12, 15, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.guide-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+
+.guide-item svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+.viewer-controls-bottom {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  z-index: 100;
+}
+
+.viewer-btn-reset {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(11, 12, 15, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.viewer-btn-reset:hover {
+  background: rgba(20, 136, 252, 0.2);
+  border-color: var(--color-accent);
+  transform: scale(1.05);
+}
+
+.viewer-bg-selector {
+  display: flex;
+  gap: 8px;
+  background: rgba(11, 12, 15, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+  border-radius: 24px;
+  padding: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.viewer-bg-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.viewer-bg-btn .bg-indicator {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.2s;
+}
+
+.viewer-bg-btn[data-bg-index="0"] .bg-indicator {
+  background: #000000;
+}
+
+.viewer-bg-btn[data-bg-index="1"] .bg-indicator {
+  background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.viewer-bg-btn[data-bg-index="2"] .bg-indicator {
+  background: #ffffff;
+}
+
+.viewer-bg-btn[data-bg-index="3"] .bg-indicator {
+  background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+}
+
+.viewer-bg-btn[data-bg-index="4"] .bg-indicator {
+  background: linear-gradient(135deg, #8b7355 0%, #6b5d4f 100%);
+}
+
+.viewer-bg-btn:hover {
+  transform: scale(1.1);
+}
+
+.viewer-bg-btn.active {
+  border-color: var(--color-accent);
+}
+
+.viewer-bg-btn.active .bg-indicator {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 8px rgba(20, 136, 252, 0.5);
+}
+
+/* 반응형 대응 */
+@media (max-width: 768px) {
+  .viewer-guide-top {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+  
+  .guide-item {
+    font-size: 11px;
+  }
+  
+  .viewer-controls-bottom {
+    bottom: 12px;
+    right: 12px;
+  }
+  
+  .viewer-btn-reset {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .viewer-bg-btn {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .viewer-bg-btn .bg-indicator {
+    width: 20px;
+    height: 20px;
+  }
 }
 
 /* ========== 터미널 ========== */
