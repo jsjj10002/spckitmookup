@@ -7,6 +7,16 @@
 const chatInput = document.getElementById('landing-chat-input');
 const sendBtn = document.getElementById('landing-send-btn');
 const mySpecsBtn = document.getElementById('my-specs-btn');
+const popularBuildsBtn = document.getElementById('popular-builds-btn');
+
+// 인기 빌드 템플릿
+const POPULAR_BUILDS = [
+  "100만원대 가성비 게이밍 PC를 추천해주세요",
+  "영상 편집용 워크스테이션 PC 견적 부탁드려요",
+  "배틀그라운드 최고옵 144fps 가능한 PC",
+  "200만원 예산으로 4K 게이밍 PC 맞춰주세요",
+  "사무용 조용한 미니 PC 추천해주세요"
+];
 
 /**
  * 초기화
@@ -18,6 +28,10 @@ function init() {
   
   if (mySpecsBtn) {
     mySpecsBtn.addEventListener('click', handleMySpecsClick);
+  }
+  
+  if (popularBuildsBtn) {
+    popularBuildsBtn.addEventListener('click', handlePopularBuildsClick);
   }
   
   // 입력 포커스
@@ -52,6 +66,17 @@ function handleMySpecsClick() {
         // 커서를 맨 뒤로 이동
         placeCaretAtEnd(chatInput);
     }
+    chatInput.focus();
+}
+
+/**
+ * "인기 빌드" 버튼 클릭 핸들러
+ */
+function handlePopularBuildsClick() {
+    // 랜덤하게 인기 빌드 템플릿 선택
+    const randomBuild = POPULAR_BUILDS[Math.floor(Math.random() * POPULAR_BUILDS.length)];
+    chatInput.innerText = randomBuild;
+    placeCaretAtEnd(chatInput);
     chatInput.focus();
 }
 
