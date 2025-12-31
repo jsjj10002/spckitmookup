@@ -1,69 +1,101 @@
-# Backend - RAG 시스템
+# Backend - Spckit AI 시스템
 
-> PC 부품 추천을 위한 RAG (Retrieval-Augmented Generation) 백엔드
+> PC 부품 추천을 위한 RAG 및 AI 모듈 백엔드
 
-## 📋 개요
+## 개요
 
-이 디렉토리는 Spckit AI의 백엔드 RAG 시스템을 포함합니다.
+이 디렉토리는 Spckit AI의 백엔드 시스템을 포함한다.
 
-## 🏗️ 구조
+- **RAG 시스템**: 부품 검색 및 추천 생성
+- **AI 모듈**: 사양 진단, 가격 예측, 호환성 검사 등
+
+## 구조
 
 ```
 backend/
-├── api/                  # FastAPI REST API
-│   ├── main.py          # API 엔드포인트
+├── api/                    # FastAPI REST API
+│   ├── main.py            # API 엔드포인트 (라우터)
 │   └── __init__.py
 │
-├── rag/                 # RAG 핵심 모듈
-│   ├── config.py        # 설정 관리
-│   ├── embedder.py      # 임베딩 생성
-│   ├── vector_store.py  # ChromaDB 관리
-│   ├── retriever.py     # 문서 검색
-│   ├── generator.py     # AI 응답 생성
-│   ├── data_parser.py   # SQL 파싱
-│   └── pipeline.py      # RAG 파이프라인
+├── rag/                   # RAG 핵심 모듈 [완성]
+│   ├── config.py          # 설정 관리
+│   ├── embedder.py        # 임베딩 생성 (Gemini)
+│   ├── vector_store.py    # ChromaDB 관리
+│   ├── retriever.py       # 문서 검색
+│   ├── generator.py       # AI 응답 생성 + 프롬프트 관리
+│   ├── data_parser.py     # SQL 파싱
+│   ├── pipeline.py        # RAG 파이프라인
+│   └── step_by_step.py    # 단계별 선택 파이프라인 [뼈대]
 │
-├── scripts/             # 유틸리티 스크립트
-│   ├── init_database.py # DB 초기화
-│   └── test_rag.py      # RAG 테스트
+├── modules/               # AI 모듈 [뼈대]
+│   ├── multi_agent/       # CREWai 멀티 에이전트
+│   ├── pc_diagnosis/      # PC 사양 진단
+│   ├── price_prediction/  # 가격 예측
+│   ├── recommendation/    # GNN 추천 시스템
+│   ├── compatibility/     # 호환성 검사 엔진
+│   ├── README.md          # 모듈 개발 가이드
+│   └── SERVICE_ARCHITECTURE.md  # 서비스 아키텍처 문서
 │
-├── data/                # 데이터 파일
-│   └── pc_data_dump.sql # PC 부품 DB
+├── tests/                 # 테스트 파일
+│   ├── test_multi_agent.py
+│   ├── test_pc_diagnosis.py
+│   ├── test_price_prediction.py
+│   ├── test_recommendation.py
+│   ├── test_compatibility.py
+│   └── test_rag_force_generation.py
 │
-├── chroma_db/           # ChromaDB 저장소 (생성됨)
-├── prompts/             # 프롬프트 템플릿
-├── pyproject.toml       # Python 프로젝트 설정
-└── .env                 # 환경 변수 (생성 필요)
+├── scripts/               # 유틸리티 스크립트
+│   ├── setup_dev.py       # 개발 환경 설정
+│   ├── init_database.py   # 벡터 DB 초기화
+│   ├── test_rag.py        # RAG 테스트
+│   ├── check_sql.py       # SQL 파일 확인 (디버그)
+│   ├── debug_sql_parse.py # SQL 파싱 디버그
+│   └── README.md          # 스크립트 설명
+│
+├── data/                  # 데이터 파일
+│   ├── pc_data_dump.sql   # PC 부품 DB 덤프 (11MB)
+│   ├── PC 부품 DB 스키마 가이드.pdf  # 스키마 문서
+│   └── README.md
+│
+├── chroma_db/             # ChromaDB 저장소 (자동 생성)
+├── pyproject.toml         # Python 프로젝트 설정 (uv)
+├── requirements.txt       # pip 호환 의존성
+├── ONBOARDING.md          # 온보딩 가이드
+└── .env                   # 환경 변수 (생성 필요)
 ```
 
-## 🚀 빠른 시작
+## 🚀 빠른 시작 (uv 사용)
 
-상세한 가이드는 **[docs/QUICK_START.md](../docs/QUICK_START.md)**를 참조하세요.
+상세한 온보딩 가이드는 **[ONBOARDING.md](./ONBOARDING.md)**를 참조하세요.
 
 ```bash
-# 1. 가상 환경 생성
-uv venv
+# 1. uv 설치 (처음 한 번만)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. 활성화 (Windows)
-.venv\Scripts\activate
+# 2. 가상 환경 생성 및 활성화
+uv venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
 
 # 3. 의존성 설치
 uv pip install -e .
 
 # 4. 환경 변수 설정
-# .env 파일 생성 후 GEMINI_API_KEY 추가
+cp ../.env.example ../.env
+# .env 파일에서 GEMINI_API_KEY 설정
 
-# 5. 데이터베이스 초기화 (프로젝트 루트에서)
-cd ..
-backend\run_init.bat
+# 5. 테스트 실행
+pytest tests/ -v
 
-# 6. 테스트
-backend\run_test.bat
+# 6. API 서버 실행
+uvicorn api.main:app --reload --port 8000
 ```
 
 ## 📚 상세 문서
 
-- **[RAG 시스템 가이드](../docs/RAG_GUIDE.md)** - 완전한 RAG 시스템 설명
+- **[온보딩 가이드](./ONBOARDING.md)** - 새 팀원을 위한 환경 설정 (uv 사용)
+- **[모듈 개발 가이드](./modules/README.md)** - AI 모듈 개발 상세 문서
+- **[RAG 시스템 가이드](../docs/RAG_GUIDE.md)** - RAG 시스템 설명
 - **[빠른 시작](../docs/QUICK_START.md)** - 단계별 설정 가이드
 - **[문제 해결](../docs/TROUBLESHOOTING.md)** - 일반적인 오류 해결
 - **[배포 가이드](../docs/DEPLOYMENT_GUIDE.md)** - 프로덕션 배포
