@@ -14,44 +14,53 @@
 ```
 backend/
 ├── api/                    # FastAPI REST API
-│   ├── main.py            # API 엔드포인트
+│   ├── main.py            # API 엔드포인트 (라우터)
 │   └── __init__.py
 │
-├── rag/                   # RAG 핵심 모듈
+├── rag/                   # RAG 핵심 모듈 [완성]
 │   ├── config.py          # 설정 관리
-│   ├── embedder.py        # 임베딩 생성
+│   ├── embedder.py        # 임베딩 생성 (Gemini)
 │   ├── vector_store.py    # ChromaDB 관리
 │   ├── retriever.py       # 문서 검색
-│   ├── generator.py       # AI 응답 생성
+│   ├── generator.py       # AI 응답 생성 + 프롬프트 관리
 │   ├── data_parser.py     # SQL 파싱
 │   ├── pipeline.py        # RAG 파이프라인
-│   └── step_by_step.py    # 단계별 선택 파이프라인 (NEW)
+│   └── step_by_step.py    # 단계별 선택 파이프라인 [뼈대]
 │
-├── modules/               # AI 모듈 (NEW)
+├── modules/               # AI 모듈 [뼈대]
 │   ├── multi_agent/       # CREWai 멀티 에이전트
 │   ├── pc_diagnosis/      # PC 사양 진단
 │   ├── price_prediction/  # 가격 예측
 │   ├── recommendation/    # GNN 추천 시스템
 │   ├── compatibility/     # 호환성 검사 엔진
-│   └── README.md          # 모듈 상세 문서
+│   ├── README.md          # 모듈 개발 가이드
+│   └── SERVICE_ARCHITECTURE.md  # 서비스 아키텍처 문서
 │
-├── tests/                 # 테스트 파일 (NEW)
+├── tests/                 # 테스트 파일
 │   ├── test_multi_agent.py
 │   ├── test_pc_diagnosis.py
 │   ├── test_price_prediction.py
 │   ├── test_recommendation.py
-│   └── test_compatibility.py
+│   ├── test_compatibility.py
+│   └── test_rag_force_generation.py
 │
 ├── scripts/               # 유틸리티 스크립트
-│   ├── init_database.py   # DB 초기화
-│   └── test_rag.py        # RAG 테스트
+│   ├── setup_dev.py       # 개발 환경 설정
+│   ├── init_database.py   # 벡터 DB 초기화
+│   ├── test_rag.py        # RAG 테스트
+│   ├── check_sql.py       # SQL 파일 확인 (디버그)
+│   ├── debug_sql_parse.py # SQL 파싱 디버그
+│   └── README.md          # 스크립트 설명
 │
 ├── data/                  # 데이터 파일
-│   └── pc_data_dump.sql   # PC 부품 DB
+│   ├── pc_data_dump.sql   # PC 부품 DB 덤프 (11MB)
+│   ├── PC 부품 DB 스키마 가이드.pdf  # 스키마 문서
+│   └── README.md
 │
-├── chroma_db/             # ChromaDB 저장소 (생성됨)
-├── prompts/               # 프롬프트 템플릿
-├── pyproject.toml         # Python 프로젝트 설정
+├── chroma_db/             # ChromaDB 저장소 (자동 생성)
+├── pyproject.toml         # Python 프로젝트 설정 (uv)
+├── requirements.txt       # pip 호환 의존성
+├── ONBOARDING.md          # 온보딩 가이드
 └── .env                   # 환경 변수 (생성 필요)
 ```
 
