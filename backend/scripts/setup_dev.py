@@ -2,12 +2,25 @@
 개발 환경 자동 설정 스크립트
 
 팀원 개발자들이 쉽게 개발 환경을 설정할 수 있도록 도와주는 스크립트입니다.
+
+사용법:
+    python backend/scripts/setup_dev.py [옵션]
+
+옵션 없이 실행하면 대화형 모드로 환경 설정을 진행합니다.
+
+모듈별 의존성 설치:
+    --module multi-agent      # CREWai 멀티 에이전트
+    --module price-prediction # 가격 예측 (Prophet)
+    --module recommendation   # GNN 추천 (PyTorch)
+    --module ontology         # 온톨로지 (RDFLib)
+    --all-modules            # 모든 모듈 설치
 """
 import sys
 import os
 import subprocess
+import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 # 프로젝트 루트를 Python 경로에 추가
 project_root = Path(__file__).parent.parent.parent
@@ -212,17 +225,67 @@ def main():
     print_step(step, total_steps, "의존성 설치 중...")
     step += 1
     
+    # 설치 옵션 결정
+    install_extras = "onboarding"  # 기본: 온보딩 패키지
+    
+    # 모듈 선택 (대화형)
+    print()
+    print_info("설치할 의존성을 선택하세요:")
+    print_info("  1. 기본 + 개발 도구 (온보딩 권장)")
+    print_info("  2. 기본만 (최소 설치)")
+    print_info("  3. 전체 설치 (모든 모듈)")
+    print_info("  4. 특정 모듈 선택")
+    print()
+    
+    choice = get_user_input("선택 (1-4)", "1")
+    
+    if choice == "1":
+        install_extras = "onboarding"
+    elif choice == "2":
+        install_extras = ""
+    elif choice == "3":
+        install_extras = "all"
+    elif choice == "4":
+        print()
+        print_info("설치할 모듈을 선택하세요 (쉼표로 구분, 예: 1,3):")
+        print_info("  1. multi-agent     (CREWai 멀티 에이전트)")
+        print_info("  2. price-prediction (가격 예측 - Prophet)")
+        print_info("  3. recommendation  (GNN 추천 - PyTorch)")
+        print_info("  4. ontology        (온톨로지 - RDFLib)")
+        print()
+        module_choice = get_user_input("선택", "")
+        
+        module_map = {
+            "1": "multi-agent",
+            "2": "price-prediction", 
+            "3": "recommendation",
+            "4": "ontology"
+        }
+        
+        selected_modules = []
+        for m in module_choice.split(","):
+            m = m.strip()
+            if m in module_map:
+                selected_modules.append(module_map[m])
+        
+        # 기본 dev는 항상 포함
+        install_extras = "dev," + ",".join(selected_modules) if selected_modules else "dev"
+    
     # uv를 사용하여 설치 (더 빠름)
     print_info("uv를 사용하여 의존성 설치 중...")
-    uv_cmd = "cd backend && uv pip install -e ."
+    
+    if install_extras:
+        uv_cmd = f"cd backend && uv pip install -e '.[{install_extras}]'"
+    else:
+        uv_cmd = "cd backend && uv pip install -e ."
     
     if not run_command(uv_cmd, "의존성 설치"):
         print_warning("uv 설치 실패. pip로 재시도 중...")
         # 폴백: pip 사용
         if sys.platform == "win32":
-            pip_cmd = "backend\\.venv\\Scripts\\python.exe -m pip install -e backend/"
+            pip_cmd = f"backend\\.venv\\Scripts\\python.exe -m pip install -e 'backend/[{install_extras}]'" if install_extras else "backend\\.venv\\Scripts\\python.exe -m pip install -e backend/"
         else:
-            pip_cmd = "backend/.venv/bin/python -m pip install -e backend/"
+            pip_cmd = f"backend/.venv/bin/python -m pip install -e 'backend/[{install_extras}]'" if install_extras else "backend/.venv/bin/python -m pip install -e backend/"
         
         if not run_command(pip_cmd, "의존성 설치 (pip 사용)"):
             print_error("의존성 설치 실패")
@@ -390,7 +453,16 @@ def main():
     print()
     print("=" * 70)
     print()
-    print("💡 도움이 필요하시면 docs/QUICK_START.md를 참조하세요.")
+    print("📚 문서 안내:")
+    print("   - 빠른 시작: docs/QUICK_START.md")
+    print("   - 온보딩 가이드: backend/ONBOARDING.md")
+    print("   - 모듈 개발 가이드: backend/modules/README.md")
+    print()
+    print("🔧 추가 모듈 설치:")
+    print("   uv pip install -e 'backend/[multi-agent]'    # CREWai")
+    print("   uv pip install -e 'backend/[recommendation]' # GNN/PyTorch")
+    print("   uv pip install -e 'backend/[price-prediction]' # Prophet")
+    print("   uv pip install -e 'backend/[all]'            # 전체")
     print()
 
 if __name__ == "__main__":

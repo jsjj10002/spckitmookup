@@ -55,34 +55,59 @@ backend/
 └── .env                   # 환경 변수 (생성 필요)
 ```
 
-## 🚀 빠른 시작
+## 🚀 빠른 시작 (uv 사용)
 
-상세한 가이드는 **[docs/QUICK_START.md](../docs/QUICK_START.md)**를 참조하세요.
+상세한 온보딩 가이드는 **[ONBOARDING.md](./ONBOARDING.md)**를 참조하세요.
 
 ```bash
-# 1. 가상 환경 생성
+# 1. uv 설치 (처음 한 번만)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. 가상 환경 생성 및 활성화
 uv venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
 
-# 2. 활성화 (Windows)
-.venv\Scripts\activate
-
-# 3. 의존성 설치
-uv pip install -e .
+# 3. 의존성 설치 (온보딩용 - 권장)
+uv pip install -e ".[onboarding]"
 
 # 4. 환경 변수 설정
-# .env 파일 생성 후 GEMINI_API_KEY 추가
+cp ../.env.example ../.env
+# .env 파일에서 GEMINI_API_KEY 설정
 
-# 5. 데이터베이스 초기화 (프로젝트 루트에서)
-cd ..
-backend\run_init.bat
+# 5. 테스트 실행
+pytest tests/ -v
 
-# 6. 테스트
-backend\run_test.bat
+# 6. API 서버 실행
+uvicorn api.main:app --reload --port 8000
+```
+
+### 모듈별 의존성 설치
+
+담당 모듈에 따라 필요한 패키지를 추가로 설치한다:
+
+```bash
+# CREWai 멀티 에이전트 모듈
+uv pip install -e ".[multi-agent]"
+
+# 가격 예측 모듈 (Prophet)
+uv pip install -e ".[price-prediction]"
+
+# GNN 추천 시스템 모듈 (PyTorch)
+uv pip install -e ".[recommendation]"
+
+# 온톨로지 호환성 모듈 (RDFLib)
+uv pip install -e ".[ontology]"
+
+# 전체 설치
+uv pip install -e ".[all]"
 ```
 
 ## 📚 상세 문서
 
-- **[RAG 시스템 가이드](../docs/RAG_GUIDE.md)** - 완전한 RAG 시스템 설명
+- **[온보딩 가이드](./ONBOARDING.md)** - 새 팀원을 위한 환경 설정 (uv 사용)
+- **[모듈 개발 가이드](./modules/README.md)** - AI 모듈 개발 상세 문서
+- **[RAG 시스템 가이드](../docs/RAG_GUIDE.md)** - RAG 시스템 설명
 - **[빠른 시작](../docs/QUICK_START.md)** - 단계별 설정 가이드
 - **[문제 해결](../docs/TROUBLESHOOTING.md)** - 일반적인 오류 해결
 - **[배포 가이드](../docs/DEPLOYMENT_GUIDE.md)** - 프로덕션 배포
