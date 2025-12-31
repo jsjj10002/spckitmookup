@@ -342,8 +342,41 @@ git checkout -b feature/pc_diagnosis/add-benchmark-db/241231
 
 ---
 
+## 데이터 요구사항
+
+각 모듈은 학습 또는 참조용 데이터가 필요하다. 데이터는 `backend/data/{모듈명}/` 폴더에 저장한다.
+
+| 모듈 | 필요 데이터 | 상세 가이드 |
+|------|------------|------------|
+| multi_agent | 없음 (다른 모듈 활용) | - |
+| pc_diagnosis | 벤치마크 점수, 게임 권장사양 | [데이터 가이드](../data/pc_diagnosis/README.md) |
+| price_prediction | 가격 이력, 환율, 이벤트 | [데이터 가이드](../data/price_prediction/README.md) |
+| recommendation | 그래프 노드/엣지, 인기 조합 | [데이터 가이드](../data/recommendation/README.md) |
+| compatibility | 소켓 매핑, 폼팩터, 치수 | [데이터 가이드](../data/compatibility/README.md) |
+
+### 데이터 폴더 구조
+
+```
+backend/data/
+├── pc_data_dump.sql          # 기본 부품 데이터 (RAG)
+├── pc_diagnosis/             # 벤치마크, 권장사양
+├── price_prediction/         # 가격 이력, 환율
+├── recommendation/           # 그래프 데이터
+└── compatibility/            # 호환성 매핑
+```
+
+### 데이터 수집 우선순위
+
+1. **필수**: compatibility (서비스 기본 동작)
+2. **권장**: pc_diagnosis (벤치마크 상위 50개)
+3. **선택**: price_prediction, recommendation (고급 기능)
+
+---
+
 ## 관련 문서
 
+- [데이터 디렉토리](../data/README.md)
+- [서비스 아키텍처](./SERVICE_ARCHITECTURE.md)
 - [RAG 가이드](../../docs/RAG_GUIDE.md)
 - [빠른 시작](../../docs/QUICK_START.md)
 - [프로젝트 구조](../../docs/PROJECT_STRUCTURE.md)
@@ -351,4 +384,4 @@ git checkout -b feature/pc_diagnosis/add-benchmark-db/241231
 ---
 
 **작성일**: 2024-12-31  
-**버전**: 0.1.0
+**버전**: 0.2.0
