@@ -1,30 +1,86 @@
 [project]
 name = "spckit-ai-backend"
-version = "0.1.0"
-description = "PC 부품 추천 RAG 시스템 백엔드"
+version = "0.2.0"
+description = "PC 부품 추천 RAG 시스템 백엔드 (AI 모듈 포함)"
 readme = "README.md"
 requires-python = ">=3.10"
+
+# 기본 의존성 (필수)
 dependencies = [
-    "google-genai>=0.1.0",
+    # AI/ML 기본
+    "google-genai>=1.0.0",
     "chromadb>=0.5.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
+    
+    # 데이터베이스
     "pymysql>=1.1.0",
     "sqlparse>=0.5.0",
-    "python-dotenv>=1.0.0",
-    "tqdm>=4.66.0",
-    "fastapi>=0.110.0",
-    "uvicorn[standard]>=0.27.0",
+    
+    # 웹 프레임워크
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    
+    # 유틸리티
     "pydantic>=2.6.0",
     "loguru>=0.7.2",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.66.0",
 ]
 
 [project.optional-dependencies]
+# 개발 도구
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
     "black>=24.0.0",
     "ruff>=0.3.0",
+    "ipython>=8.0.0",
+]
+
+# 멀티 에이전트 모듈 (modules/multi_agent)
+multi-agent = [
+    "crewai>=0.86.0",
+    "crewai-tools>=0.17.0",
+    "langchain>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+]
+
+# 가격 예측 모듈 (modules/price_prediction)
+price-prediction = [
+    "prophet>=1.1.5",
+    "scikit-learn>=1.4.0",
+    # "pytorch-forecasting>=1.0.0",  # TFT 모델용 (PyTorch 필요)
+]
+
+# GNN 추천 시스템 모듈 (modules/recommendation)
+recommendation = [
+    "torch>=2.0.0",
+    "networkx>=3.2.0",
+    # "torch-geometric>=2.5.0",  # CUDA/CPU 버전에 따라 별도 설치 필요
+]
+
+# 온톨로지 모듈 (modules/compatibility) - 고급 기능
+ontology = [
+    "rdflib>=7.0.0",
+    "owlready2>=0.46",
+]
+
+# 전체 설치 (모든 선택적 의존성)
+all = [
+    "spckit-ai-backend[dev]",
+    "spckit-ai-backend[multi-agent]",
+    "spckit-ai-backend[price-prediction]",
+    "spckit-ai-backend[recommendation]",
+    "spckit-ai-backend[ontology]",
+]
+
+# 기본 + 개발 (온보딩용)
+onboarding = [
+    "spckit-ai-backend[dev]",
+    "networkx>=3.2.0",
+    "scikit-learn>=1.4.0",
 ]
 
 [build-system]
@@ -32,7 +88,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["rag", "api", "scripts"]
+packages = ["rag", "api", "scripts", "modules"]
 
 [tool.ruff]
 line-length = 100
@@ -46,3 +102,10 @@ ignore = ["E501"]
 line-length = 100
 target-version = ["py310"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
