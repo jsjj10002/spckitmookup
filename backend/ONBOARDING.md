@@ -8,7 +8,7 @@
 
 ```bash
 # 1. uv 설치 (처음 한 번만)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+powershell -c "irm https://astral.sh/uv/install.ps1 | more"
 
 # 2. backend 디렉토리로 이동
 cd backend
