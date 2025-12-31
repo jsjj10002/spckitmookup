@@ -1,39 +1,58 @@
-# Backend - RAG 시스템
+# Backend - Spckit AI 시스템
 
-> PC 부품 추천을 위한 RAG (Retrieval-Augmented Generation) 백엔드
+> PC 부품 추천을 위한 RAG 및 AI 모듈 백엔드
 
-## 📋 개요
+## 개요
 
-이 디렉토리는 Spckit AI의 백엔드 RAG 시스템을 포함합니다.
+이 디렉토리는 Spckit AI의 백엔드 시스템을 포함한다.
 
-## 🏗️ 구조
+- **RAG 시스템**: 부품 검색 및 추천 생성
+- **AI 모듈**: 사양 진단, 가격 예측, 호환성 검사 등
+
+## 구조
 
 ```
 backend/
-├── api/                  # FastAPI REST API
-│   ├── main.py          # API 엔드포인트
+├── api/                    # FastAPI REST API
+│   ├── main.py            # API 엔드포인트
 │   └── __init__.py
 │
-├── rag/                 # RAG 핵심 모듈
-│   ├── config.py        # 설정 관리
-│   ├── embedder.py      # 임베딩 생성
-│   ├── vector_store.py  # ChromaDB 관리
-│   ├── retriever.py     # 문서 검색
-│   ├── generator.py     # AI 응답 생성
-│   ├── data_parser.py   # SQL 파싱
-│   └── pipeline.py      # RAG 파이프라인
+├── rag/                   # RAG 핵심 모듈
+│   ├── config.py          # 설정 관리
+│   ├── embedder.py        # 임베딩 생성
+│   ├── vector_store.py    # ChromaDB 관리
+│   ├── retriever.py       # 문서 검색
+│   ├── generator.py       # AI 응답 생성
+│   ├── data_parser.py     # SQL 파싱
+│   ├── pipeline.py        # RAG 파이프라인
+│   └── step_by_step.py    # 단계별 선택 파이프라인 (NEW)
 │
-├── scripts/             # 유틸리티 스크립트
-│   ├── init_database.py # DB 초기화
-│   └── test_rag.py      # RAG 테스트
+├── modules/               # AI 모듈 (NEW)
+│   ├── multi_agent/       # CREWai 멀티 에이전트
+│   ├── pc_diagnosis/      # PC 사양 진단
+│   ├── price_prediction/  # 가격 예측
+│   ├── recommendation/    # GNN 추천 시스템
+│   ├── compatibility/     # 호환성 검사 엔진
+│   └── README.md          # 모듈 상세 문서
 │
-├── data/                # 데이터 파일
-│   └── pc_data_dump.sql # PC 부품 DB
+├── tests/                 # 테스트 파일 (NEW)
+│   ├── test_multi_agent.py
+│   ├── test_pc_diagnosis.py
+│   ├── test_price_prediction.py
+│   ├── test_recommendation.py
+│   └── test_compatibility.py
 │
-├── chroma_db/           # ChromaDB 저장소 (생성됨)
-├── prompts/             # 프롬프트 템플릿
-├── pyproject.toml       # Python 프로젝트 설정
-└── .env                 # 환경 변수 (생성 필요)
+├── scripts/               # 유틸리티 스크립트
+│   ├── init_database.py   # DB 초기화
+│   └── test_rag.py        # RAG 테스트
+│
+├── data/                  # 데이터 파일
+│   └── pc_data_dump.sql   # PC 부품 DB
+│
+├── chroma_db/             # ChromaDB 저장소 (생성됨)
+├── prompts/               # 프롬프트 템플릿
+├── pyproject.toml         # Python 프로젝트 설정
+└── .env                   # 환경 변수 (생성 필요)
 ```
 
 ## 🚀 빠른 시작
