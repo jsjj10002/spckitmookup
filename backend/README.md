@@ -68,8 +68,8 @@ uv venv
 source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
-# 3. 의존성 설치 (온보딩용 - 권장)
-uv pip install -e ".[onboarding]"
+# 3. 의존성 설치
+uv pip install -e .
 
 # 4. 환경 변수 설정
 cp ../.env.example ../.env
@@ -80,27 +80,6 @@ pytest tests/ -v
 
 # 6. API 서버 실행
 uvicorn api.main:app --reload --port 8000
-```
-
-### 모듈별 의존성 설치
-
-담당 모듈에 따라 필요한 패키지를 추가로 설치한다:
-
-```bash
-# CREWai 멀티 에이전트 모듈
-uv pip install -e ".[multi-agent]"
-
-# 가격 예측 모듈 (Prophet)
-uv pip install -e ".[price-prediction]"
-
-# GNN 추천 시스템 모듈 (PyTorch)
-uv pip install -e ".[recommendation]"
-
-# 온톨로지 호환성 모듈 (RDFLib)
-uv pip install -e ".[ontology]"
-
-# 전체 설치
-uv pip install -e ".[all]"
 ```
 
 ## 📚 상세 문서
