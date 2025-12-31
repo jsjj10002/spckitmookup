@@ -1,13 +1,7 @@
 """
 개발 환경 자동 설정 스크립트
 
-팀원 개발자들이 쉽게 개발 환경을 설정할 수 있도록 도와주는 스크립트이다.
-
-사용법:
-    python backend/scripts/setup_dev.py
-
-대화형 모드로 환경 설정을 진행한다.
-모든 팀원이 동일한 환경을 사용하도록 전체 의존성을 설치한다.
+팀원 개발자들이 쉽게 개발 환경을 설정할 수 있도록 도와주는 스크립트입니다.
 """
 import sys
 import os
@@ -218,10 +212,8 @@ def main():
     print_step(step, total_steps, "의존성 설치 중...")
     step += 1
     
-    # uv를 사용하여 전체 의존성 설치
+    # uv를 사용하여 설치 (더 빠름)
     print_info("uv를 사용하여 의존성 설치 중...")
-    print_info("(모든 모듈 포함 - 팀 전체 동일 환경)")
-    
     uv_cmd = "cd backend && uv pip install -e ."
     
     if not run_command(uv_cmd, "의존성 설치"):
@@ -398,10 +390,7 @@ def main():
     print()
     print("=" * 70)
     print()
-    print("📚 문서 안내:")
-    print("   - 온보딩 가이드: backend/ONBOARDING.md")
-    print("   - 모듈 개발 가이드: backend/modules/README.md")
-    print("   - 빠른 시작: docs/QUICK_START.md")
+    print("💡 도움이 필요하시면 docs/QUICK_START.md를 참조하세요.")
     print()
 
 if __name__ == "__main__":
