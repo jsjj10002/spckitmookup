@@ -5,13 +5,18 @@ description = "PC 부품 추천 RAG 시스템 백엔드 (AI 모듈 포함)"
 readme = "README.md"
 requires-python = ">=3.10"
 
-# 기본 의존성 (필수)
+# 모든 의존성 통합 (팀 전체 동일 환경)
 dependencies = [
+    # ============================================
+    # 코어 의존성
+    # ============================================
+    
     # AI/ML 기본
     "google-genai>=1.0.0",
     "chromadb>=0.5.0",
     "pandas>=2.0.0",
     "numpy>=1.24.0",
+    "scikit-learn>=1.4.0",
     
     # 데이터베이스
     "pymysql>=1.1.0",
@@ -26,61 +31,43 @@ dependencies = [
     "loguru>=0.7.2",
     "python-dotenv>=1.0.0",
     "tqdm>=4.66.0",
-]
-
-[project.optional-dependencies]
-# 개발 도구
-dev = [
+    
+    # ============================================
+    # 개발 도구
+    # ============================================
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
     "black>=24.0.0",
     "ruff>=0.3.0",
     "ipython>=8.0.0",
-]
-
-# 멀티 에이전트 모듈 (modules/multi_agent)
-multi-agent = [
+    
+    # ============================================
+    # 멀티 에이전트 모듈 (modules/multi_agent)
+    # ============================================
     "crewai>=0.86.0",
     "crewai-tools>=0.17.0",
     "langchain>=0.3.0",
     "langchain-google-genai>=2.0.0",
-]
-
-# 가격 예측 모듈 (modules/price_prediction)
-price-prediction = [
+    
+    # ============================================
+    # 가격 예측 모듈 (modules/price_prediction)
+    # ============================================
     "prophet>=1.1.5",
-    "scikit-learn>=1.4.0",
-    # "pytorch-forecasting>=1.0.0",  # TFT 모델용 (PyTorch 필요)
-]
-
-# GNN 추천 시스템 모듈 (modules/recommendation)
-recommendation = [
+    
+    # ============================================
+    # GNN 추천 시스템 모듈 (modules/recommendation)
+    # ============================================
     "torch>=2.0.0",
     "networkx>=3.2.0",
-    # "torch-geometric>=2.5.0",  # CUDA/CPU 버전에 따라 별도 설치 필요
-]
-
-# 온톨로지 모듈 (modules/compatibility) - 고급 기능
-ontology = [
+    # torch-geometric은 CUDA 버전에 따라 별도 설치 필요
+    # pip install torch-geometric
+    
+    # ============================================
+    # 온톨로지 모듈 (modules/compatibility)
+    # ============================================
     "rdflib>=7.0.0",
     "owlready2>=0.46",
-]
-
-# 전체 설치 (모든 선택적 의존성)
-all = [
-    "spckit-ai-backend[dev]",
-    "spckit-ai-backend[multi-agent]",
-    "spckit-ai-backend[price-prediction]",
-    "spckit-ai-backend[recommendation]",
-    "spckit-ai-backend[ontology]",
-]
-
-# 기본 + 개발 (온보딩용)
-onboarding = [
-    "spckit-ai-backend[dev]",
-    "networkx>=3.2.0",
-    "scikit-learn>=1.4.0",
 ]
 
 [build-system]
