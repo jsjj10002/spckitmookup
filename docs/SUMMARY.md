@@ -6,7 +6,7 @@
 
 ## 프로젝트 개요
 
-**Spckit AI**는 Google Gemini 2.0 Flash와 RAG(Retrieval-Augmented Generation) 기술을 활용한 AI 기반 PC 부품 추천 시스템이다. 사용자의 자연어 쿼리를 이해하고 135,000개 이상의 실제 부품 데이터베이스에서 최적의 조합을 추천한다.
+**Spckit AI**는 Google Gemini 3 (Pro/Flash)와 RAG(Retrieval-Augmented Generation) 기술을 활용한 AI 기반 PC 부품 추천 시스템이다. 사용자의 자연어 쿼리를 이해하고 135,000개 이상의 실제 부품 데이터베이스에서 최적의 조합을 추천한다.
 
 ---
 
@@ -27,7 +27,7 @@
 |------|------|
 | Frontend | Vite + Vanilla JavaScript |
 | Backend | Python + FastAPI |
-| AI/ML | Google Gemini 2.0 Flash |
+| AI/ML | Google Gemini 3 (Pro/Flash) |
 | Database | ChromaDB (벡터 DB) |
 
 ### 3. API 엔드포인트

@@ -76,7 +76,7 @@ Bolt.new 스타일을 기반으로 한 모던한 UI/UX:
 
 - **프론트엔드**: HTML5, CSS3, JavaScript (ES6+)
 - **빌드 도구**: Vite
-- **AI**: Google Gemini 2.0 Flash
+- **AI**: Google Gemini 3 (Pro/Flash)
 - **스타일**: 커스텀 CSS (CSS Variables, Flexbox, Grid)
 
 ## 📝 API 사용법

@@ -191,7 +191,7 @@ class AgentOrchestrator:
     
     def __init__(
         self,
-        llm_model: str = "gemini-2.5-pro",
+        llm_model: str = "gemini-3-flash-preview",
         temperature: float = 0.7,
         verbose: bool = True,
     ):
@@ -334,7 +334,7 @@ def create_orchestrator(
     """
     config = config or {}
     return AgentOrchestrator(
-        llm_model=config.get("llm_model", "gemini-2.5-pro"),
+        llm_model=config.get("llm_model", "gemini-3-flash-preview"),
         temperature=config.get("temperature", 0.7),
         verbose=config.get("verbose", True),
     )

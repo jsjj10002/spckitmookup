@@ -26,10 +26,12 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))
 
 # 생성 모델 설정
-# 기본값: gemini-2.5-pro (2025년 11월 최신 - 코딩/추론/복잡한 작업에 최적)
+# 기본값: gemini-3-flash-preview (2026년 1월 최신)
 # 환경변수로 변경 가능 (.env 파일에서 GENERATION_MODEL 설정)
-# 사용 가능한 모델: gemini-3-pro, gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite
-GENERATION_MODEL = os.getenv("GENERATION_MODEL", "gemini-2.5-pro")
+# 사용 가능한 모델:
+#   - gemini-3-pro-preview: 복잡한 추론, 고품질 응답 (느림)
+#   - gemini-3-flash-preview: 빠른 응답, 일반 추천 (권장)
+GENERATION_MODEL = os.getenv("GENERATION_MODEL", "gemini-3-flash-preview")
 
 # RAG 설정
 TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "5"))

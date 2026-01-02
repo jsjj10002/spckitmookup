@@ -27,7 +27,7 @@ class TestAgentOrchestrator:
         orchestrator = AgentOrchestrator()
         
         assert orchestrator is not None
-        assert orchestrator.llm_model == "gemini-2.5-pro"
+        assert orchestrator.llm_model == "gemini-3-flash-preview"
         assert orchestrator.verbose == True
     
     def test_orchestrator_run_placeholder(self):
@@ -64,11 +64,11 @@ class TestAgentOrchestrator:
         from backend.modules.multi_agent.orchestrator import create_orchestrator
         
         orchestrator = create_orchestrator({
-            "llm_model": "gemini-2.0-flash",
+            "llm_model": "gemini-3-flash-preview",
             "temperature": 0.5
         })
         
-        assert orchestrator.llm_model == "gemini-2.0-flash"
+        assert orchestrator.llm_model == "gemini-3-flash-preview"
         assert orchestrator.temperature == 0.5
 
 
