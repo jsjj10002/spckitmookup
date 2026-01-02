@@ -28,7 +28,7 @@
 
 ## 서비스 개요
 
-**Spckit AI**는 Google Gemini 2.0 Flash와 RAG(Retrieval-Augmented Generation) 기술을 활용하여 사용자의 요구사항, 예산, 사용 목적에 따라 최적의 PC 부품 조합을 추천하는 지능형 시스템이다.
+**Spckit AI**는 Google Gemini 3 (Pro/Flash)와 RAG(Retrieval-Augmented Generation) 기술을 활용하여 사용자의 요구사항, 예산, 사용 목적에 따라 최적의 PC 부품 조합을 추천하는 지능형 시스템이다.
 
 ### 핵심 가치
 
@@ -93,7 +93,7 @@ flowchart TB
     end
 
     subgraph EXTERNAL["외부 서비스"]
-        Q["Google Gemini API<br/>2.0 Flash"]
+        Q["Google Gemini API<br/>3 Pro/Flash"]
         R["Gemini Embedding<br/>text-embedding-004"]
     end
 
@@ -274,7 +274,7 @@ sequenceDiagram
                 ▼
 ┌───────────────────────────────────┐
 │ 4. AI 추천 생성                   │
-│    Gemini 2.0 Flash               │
+│    Gemini 3 Flash Preview         │
 │    구조화된 JSON 응답             │
 └───────────────┬───────────────────┘
                 ▼
@@ -349,7 +349,7 @@ sequenceDiagram
 |------|------|
 | Language | Python 3.10+ |
 | API Framework | FastAPI 0.110.0+ |
-| AI/ML | Google Gemini 2.0 Flash |
+| AI/ML | Google Gemini 3 (Pro/Flash Preview) |
 | Embedding | Gemini text-embedding-004 |
 | Vector DB | ChromaDB 0.5.0+ |
 | Package Manager | uv |
@@ -675,7 +675,7 @@ curl -X POST "http://localhost:8000/query-by-specs" \
 | `embedder.py` | Gemini Embedding API를 사용한 텍스트 벡터화 |
 | `vector_store.py` | ChromaDB 관리 및 벡터 저장/검색 |
 | `retriever.py` | 의미 기반 부품 검색, Top-K 랭킹 |
-| `generator.py` | Gemini 2.0 Flash 기반 추천 응답 생성 |
+| `generator.py` | Gemini 3 기반 추천 응답 생성 |
 | `data_parser.py` | MySQL 덤프 파일 파싱 |
 | `pipeline.py` | 전체 RAG 워크플로우 통합 |
 
@@ -761,11 +761,11 @@ curl -X POST "http://localhost:8000/query-by-specs" \
 
 ## 감사의 말
 
-- Google Generative AI (Gemini 2.0 Flash)
+- Google Generative AI (Gemini 3 Pro/Flash)
 - ChromaDB Team
 - FastAPI Team
 - PC 부품 데이터 제공자
 
 ---
 
-**Made with Python, FastAPI, and Google Gemini**
+**Made with Python, FastAPI, and Google Gemini 3**

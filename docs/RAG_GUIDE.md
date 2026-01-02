@@ -26,7 +26,7 @@ PC 부품 추천을 위한 RAG (Retrieval-Augmented Generation) 시스템 완전
     ↓
 [4] 컨텍스트 구성
     ↓
-[5] 추천 생성 (Gemini Generation API)
+[5] 추천 생성 (Gemini 3 API)
     ↓
 결과 반환
 ```

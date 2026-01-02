@@ -7,11 +7,11 @@
 ### Added (추가됨)
 
 #### RAG 시스템 완전 구현
-- ✨ Google Gemini Embedding API 통합 (`models/text-embedding-004`)
+- ✨ Google Gemini Embedding API 통합 (`text-embedding-004`)
 - ✨ ChromaDB 벡터 데이터베이스 구축
 - ✨ SQL 데이터 파서 구현 (135,660개 레코드 처리)
 - ✨ 의미 기반 유사도 검색 (Top-K 알고리즘)
-- ✨ Gemini 2.0 Flash 기반 AI 추천 생성
+- ✨ Gemini 3 (Pro/Flash) 기반 AI 추천 생성
 - ✨ RAG 파이프라인 통합 (`backend/rag/pipeline.py`)
 
 #### Backend 인프라
