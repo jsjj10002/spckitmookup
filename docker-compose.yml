@@ -1,0 +1,52 @@
+# Spckit AI - Docker Compose 설정
+# 개발 및 프로덕션 환경에서 쉽게 배포할 수 있도록 구성
+
+version: '3.8'
+
+services:
+  spckit-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spckit-ai
+    ports:
+      - "8000:8000"
+    environment:
+      # 필수: Google Gemini API 키
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # 환경 설정
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      # 벡터 DB 자동 초기화 (처음 실행 시 true 권장)
+      - AUTO_INIT_DB=${AUTO_INIT_DB:-true}
+      # 서버 포트
+      - PORT=8000
+    volumes:
+      # ChromaDB 데이터 영구 저장 (컨테이너 재시작 시 데이터 유지)
+      - chroma_data:/app/backend/chroma_db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  chroma_data:
+    driver: local
+
+# 사용 방법:
+# 1. .env 파일에 GEMINI_API_KEY 설정
+#    echo "GEMINI_API_KEY=your_api_key_here" > .env
+#
+# 2. 빌드 및 실행
+#    docker-compose up -d --build
+#
+# 3. 로그 확인
+#    docker-compose logs -f
+#
+# 4. 중지
+#    docker-compose down
+#
+# 5. 데이터 포함 완전 삭제
+#    docker-compose down -v
