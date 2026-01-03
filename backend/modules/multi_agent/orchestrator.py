@@ -132,10 +132,17 @@ from dataclasses import dataclass, field
 from loguru import logger
 from pydantic import BaseModel, Field
 import json
+import os
+import re
 
-# TODO: CREWai 설치 후 주석 해제
-# from crewai import Agent, Task, Crew, Process
-# from langchain_google_genai import ChatGoogleGenerativeAI
+from crewai import Agent, Task, Crew, Process
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from backend.rag.vector_store import PCComponentVectorStore
+from backend.rag.retriever import PCComponentRetriever
+from backend.modules.compatibility.engine import CompatibilityEngine
+# 에이전트 클래스는 _init_agents()에서 지연 import (테스트 mock 호환성)
+from backend.rag.config import GENERATION_MODEL
 
 
 # ============================================================================
@@ -189,15 +196,19 @@ class AgentOrchestrator:
     ```
     """
     
+
+
+# ...
+
     def __init__(
         self,
-        llm_model: str = "gemini-3-flash-preview",
+        llm_model: str = GENERATION_MODEL,
         temperature: float = 0.7,
         verbose: bool = True,
     ):
         """
         Args:
-            llm_model: 사용할 LLM 모델명
+            llm_model: 사용할 LLM 모델명 (기본값: config.GENERATION_MODEL)
             temperature: LLM 생성 온도
             verbose: 상세 로깅 여부
         """
@@ -205,59 +216,127 @@ class AgentOrchestrator:
         self.temperature = temperature
         self.verbose = verbose
         
-        # TODO: 실제 구현 시 LLM 및 에이전트 초기화
-        # self.llm = ChatGoogleGenerativeAI(model=llm_model, temperature=temperature)
-        # self._init_agents()
-        # self._init_crew()
+        # LLM 초기화
+        self.llm = ChatGoogleGenerativeAI(
+            model=llm_model, 
+            temperature=temperature,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+
+        # 의존성 모듈 초기화
+        # 1. RAG Retrieve (Vector Store -> Retriever)
+        self.vector_store = PCComponentVectorStore() 
+        self.retriever = PCComponentRetriever(self.vector_store)
+
+        # 2. Compatibility Engine
+        self.compatibility_engine = CompatibilityEngine()
+
+        # 에이전트 및 크루 초기화
+        self._init_agents()
+        self._init_crew()
         
-        logger.info(f"AgentOrchestrator 초기화: model={llm_model}")
+        logger.info(f"AgentOrchestrator 초기화 완료: model={llm_model}")
     
     def _init_agents(self):
         """
         각 전문 에이전트 초기화
-        
-        TODO: CREWai 설치 후 구현
         """
-        # 예시 코드 (실제 구현 시 주석 해제):
-        #
-        # self.requirement_analyzer = Agent(
-        #     role="요구사항 분석 전문가",
-        #     goal="사용자의 PC 조립 요구사항을 정확하게 분석하고 구조화",
-        #     backstory="당신은 10년 경력의 PC 조립 상담사입니다...",
-        #     llm=self.llm,
-        #     verbose=self.verbose
-        # )
-        #
-        # self.budget_planner = Agent(
-        #     role="예산 분배 전문가",
-        #     goal="주어진 예산을 부품 카테고리별로 최적 분배",
-        #     backstory="당신은 가성비 PC 조립의 달인입니다...",
-        #     llm=self.llm,
-        #     verbose=self.verbose
-        # )
-        pass
+        # 에이전트 클래스 지연 import (테스트 mock 호환성을 위해)
+        from backend.modules.multi_agent.agents import (
+            RequirementAnalyzerAgent,
+            BudgetPlannerAgent,
+            ComponentSelectorAgent,
+            CompatibilityCheckerAgent,
+            RecommendationWriterAgent
+        )
+        
+        self.requirement_analyzer = RequirementAnalyzerAgent(
+            llm=self.llm, 
+            verbose=self.verbose
+        )
+        
+        self.budget_planner = BudgetPlannerAgent(
+            llm=self.llm, 
+            verbose=self.verbose
+        )
+        
+        self.component_selector = ComponentSelectorAgent(
+            retriever=self.retriever,
+            llm=self.llm, 
+            verbose=self.verbose
+        )
+        
+        self.compatibility_checker = CompatibilityCheckerAgent(
+            compatibility_engine=self.compatibility_engine,
+            llm=self.llm, 
+            verbose=self.verbose
+        )
+        
+        self.recommendation_writer = RecommendationWriterAgent(
+            llm=self.llm, 
+            verbose=self.verbose
+        )
     
     def _init_crew(self):
         """
-        Crew (작업 팀) 초기화
-        
-        TODO: CREWai 설치 후 구현
+        Crew (작업 팀) 및 Task 초기화
         """
-        # 예시 코드:
-        #
-        # self.crew = Crew(
-        #     agents=[
-        #         self.requirement_analyzer,
-        #         self.budget_planner,
-        #         self.component_selector,
-        #         self.compatibility_checker,
-        #         self.recommendation_writer
-        #     ],
-        #     tasks=[...],
-        #     process=Process.sequential,  # 순차 처리
-        #     verbose=self.verbose
-        # )
-        pass
+        # 1. 요구사항 분석 태스크
+        task_analyze = Task(
+            description="사용자의 요청({query})을 분석하여 예산(budget), 주용도(purpose), 선호사항(preferences)을 명확하게 추출하세요. "
+                        "예산이 명시되지 않았다면 용도에 맞는 합리적인 예산을 추정하세요.",
+            expected_output="JSON 형식의 요구사항 명세서 (budget, purpose, preferences 필드 포함)",
+            agent=self.requirement_analyzer
+        )
+
+        # 2. 예산 분배 태스크
+        task_budget = Task(
+            description="이전 단계의 요구사항 분석 결과를 바탕으로, 총 예산을 CPU, GPU, Mainboard, Memory, SSD, Power, Case 등 "
+                        "주요 카테고리별로 최적으로 분배하세요. 용도에 따라 가중치를 다르게 두어야 합니다.",
+            expected_output="각 부품 카테고리별 할당 예산 금액과 그 비율이 포함된 예산 기획안",
+            agent=self.budget_planner
+        )
+
+        # 3. 부품 선택 태스크
+        task_select = Task(
+            description="기획된 예산과 사용자의 요구사항을 바탕으로 'PC Component Search Tool'을 사용하여 실제 구매 가능한 최선의 부품들을 선정하세요. "
+                        "각 카테고리(CPU, GPU, Mainboard, RAM, SSD, Power, Case)별로 하나씩 선정해야 합니다. "
+                        "검색 결과가 없으면 유사한 가격대의 대안을 찾으세요.",
+            expected_output="선정된 부품들의 상세 목록 (제품명, 가격, 스펙 포함)과 선정 이유",
+            agent=self.component_selector
+        )
+
+        # 4. 호환성 검증 태스크
+        task_check = Task(
+            description="선정된 부품 목록을 'PC Compatibility Check Tool'을 사용하여 기술적으로 검증하세요. "
+                        "CPU-메인보드 소켓, 램 규격, 파워 용량, 케이스 크기 등 모든 호환성을 확인해야 합니다. "
+                        "문제가 있다면 구체적으로 지적하세요.",
+            expected_output="호환성 검증 통과 여부 및 상세 검증 리포트",
+            agent=self.compatibility_checker
+        )
+
+        # 5. 최종 견적서 작성 태스크
+        task_write = Task(
+            description="지금까지의 모든 과정(요구사항, 부품 선정, 호환성 검증)을 종합하여 사용자에게 전달할 최종 견적서를 작성하세요. "
+                        "부품 리스트, 총 가격, 그리고 이 견적의 장점을 친절하게 설명하세요. "
+                        "반드시 최종 결과는 JSON 포맷의 데이터와 함께 마크다운 설명이 포함되어야 합니다.",
+            expected_output="사용자 친화적인 최종 PC 견적서 (JSON 데이터 블록 포함)",
+            agent=self.recommendation_writer
+        )
+
+        # Crew 구성
+        self.crew = Crew(
+            agents=[
+                self.requirement_analyzer,
+                self.budget_planner,
+                self.component_selector,
+                self.compatibility_checker,
+                self.recommendation_writer
+            ],
+            tasks=[task_analyze, task_budget, task_select, task_check, task_write],
+            process=Process.sequential,
+            verbose=self.verbose
+        )
     
     def run(self, request: Dict[str, Any]) -> RecommendationResult:
         """
@@ -268,41 +347,79 @@ class AgentOrchestrator:
             
         Returns:
             RecommendationResult: 추천 결과
-            
-        Raises:
-            ValueError: 요청 형식이 잘못된 경우
-            RuntimeError: 에이전트 처리 중 오류 발생
         """
         logger.info(f"멀티 에이전트 파이프라인 시작: {request.get('query', '')[:50]}...")
         
-        # 요청 검증
-        user_request = UserRequest(**request)
-        
-        # TODO: 실제 CREWai Crew 실행
-        # result = self.crew.kickoff(inputs=request)
-        
-        # 임시 구현 (개발 중)
-        result = self._placeholder_run(user_request)
-        
-        logger.info("멀티 에이전트 파이프라인 완료")
-        return result
-    
+        try:
+            # 입력 데이터 준비
+            inputs = {
+                "query": request.get("query"),
+                "budget": request.get("budget"),
+                "purpose": request.get("purpose")
+            }
+            
+            # CrewAI 실행
+            crew_output = self.crew.kickoff(inputs=inputs)
+            
+            # 결과 파싱 및 반환
+            return self._parse_crew_output(str(crew_output))
+
+        except Exception as e:
+            logger.error(f"파이프라인 실행 중 오류 발생: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return RecommendationResult(
+                status="error",
+                components=[],
+                agent_logs=[f"Error: {str(e)}"]
+            )
+
+    def _parse_crew_output(self, output_text: str) -> RecommendationResult:
+        """
+        CrewAI의 텍스트 출력을 구조화된 결과로 변환
+        """
+        # JSON 블록 추출 시도
+        try:
+            # ```json ... ``` 패턴 찾기
+            json_match = re.search(r"```json\s*(\{.*?\})\s*```", output_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                data = json.loads(json_str)
+                
+                # RecommendationResult 구조에 맞게 매핑
+                return RecommendationResult(
+                    status="success",
+                    components=[
+                        ComponentRecommendation(**comp) if isinstance(comp, dict) else comp 
+                        for comp in data.get("components", []) 
+                    ],
+                    total_price=data.get("total_price", 0),
+                    compatibility_check=data.get("compatibility_check", {}),
+                    performance_estimate=data.get("performance_estimate", {}),
+                    agent_logs=[output_text] 
+                )
+            else:
+                # JSON을 못 찾은 경우 텍스트 전체 반환
+                logger.warning("결과에서 JSON 블록을 찾지 못했습니다.")
+                return RecommendationResult(
+                    status="partial_success",
+                    components=[],
+                    agent_logs=[output_text]
+                )
+                
+        except Exception as e:
+            logger.error(f"결과 파싱 중 오류: {e}")
+            return RecommendationResult(
+                status="parsing_error",
+                components=[],
+                agent_logs=[f"Parsing Error: {str(e)}", output_text]
+            )
+
     def _placeholder_run(self, request: UserRequest) -> RecommendationResult:
         """
-        임시 구현 - 실제 CREWai 연동 전 테스트용
-        
-        실제 구현 시 이 메서드를 Crew.kickoff()로 대체
+        Deprecated: 실제 구현으로 대체됨
         """
-        return RecommendationResult(
-            status="placeholder",
-            components=[],
-            total_price=0,
-            agent_logs=[
-                "AgentOrchestrator: 이 기능은 아직 구현 중입니다.",
-                f"요청 쿼리: {request.query}",
-                f"예산: {request.budget}원",
-            ]
-        )
+        pass
     
     async def run_async(self, request: Dict[str, Any]) -> RecommendationResult:
         """
