@@ -525,67 +525,68 @@ class StepByStepRAGPipeline:
     ) -> List[CandidateComponent]:
         """
         RAG 검색으로 후보 부품 조회
-        
-        TODO: 실제 retriever 연동
         """
-        # Placeholder: 테스트용 더미 데이터
-        dummy_data = {
-            "cpu": [
-                CandidateComponent(
-                    component_id="cpu_i5_14600k",
-                    name="Intel Core i5-14600K",
-                    price=380000,
-                    match_score=0.92,
-                    compatibility_status="compatible",
-                    reasons=["게임 성능 우수", "멀티스레드 성능"],
-                    specs={"socket": "LGA1700", "tdp": 125},
-                ),
-                CandidateComponent(
-                    component_id="cpu_r7_7800x3d",
-                    name="AMD Ryzen 7 7800X3D",
-                    price=450000,
-                    match_score=0.95,
-                    compatibility_status="compatible",
-                    reasons=["최고의 게임 성능", "3D V-Cache"],
-                    specs={"socket": "AM5", "tdp": 120},
-                ),
-            ],
-            "motherboard": [
-                CandidateComponent(
-                    component_id="mb_asus_z790",
-                    name="ASUS ROG Strix Z790-A Gaming WiFi",
-                    price=290000,
-                    match_score=0.88,
-                    compatibility_status="compatible",
-                    reasons=["DDR5 지원", "WiFi 내장"],
-                    specs={"socket": "LGA1700", "memory_type": "DDR5", "form_factor": "ATX"},
-                ),
-            ],
-            "memory": [
-                CandidateComponent(
-                    component_id="mem_gskill_32gb",
-                    name="G.SKILL Trident Z5 DDR5-6000 32GB",
-                    price=180000,
-                    match_score=0.90,
-                    compatibility_status="compatible",
-                    reasons=["고속 DDR5", "게이밍 최적화"],
-                    specs={"generation": "DDR5", "capacity": 32, "speed": 6000},
-                ),
-            ],
-            "gpu": [
-                CandidateComponent(
-                    component_id="gpu_rtx4070",
-                    name="RTX 4070",
-                    price=700000,
-                    match_score=0.92,
-                    compatibility_status="compatible",
-                    reasons=["1440p 게이밍 최적", "DLSS 3 지원"],
-                    specs={"tdp": 200, "vram": 12},
-                ),
-            ],
+        if not self.retriever:
+            logger.warning("Retriever가 설정되지 않았습니다. 빈 리스트 반환.")
+            return []
+
+        # 1. 스펙 기반 검색 (더 정확함)
+        requirements = {
+            "categories": [category],
+            "budget": budget / 10000,  # 만원 단위 변환
+            "purpose": context.purpose,
         }
         
-        return dummy_data.get(category, [])[:top_k]
+        # 소켓 등 호환성 요구사항 추가
+        if category == "motherboard" and context.socket_requirement:
+            requirements["socket"] = context.socket_requirement
+        elif category == "memory" and context.memory_type_requirement:
+            requirements["memory_type"] = context.memory_type_requirement
+
+        # Retriever 호출
+        # category별 검색이지만 여기선 단일 카테고리만 요청
+        try:
+            # 호환성 요구사항을 필터로 변환 (purpose, budget, categories 등은 제외)
+            filters = {}
+            if "socket" in requirements:
+                filters["socket"] = requirements["socket"]
+            if "memory_type" in requirements:
+                filters["memory_type"] = requirements["memory_type"]
+                
+            results = self.retriever.retrieve(
+                query=query,
+                top_k=top_k,
+                category=category,
+                filters=filters
+            )
+        except Exception as e:
+            logger.error(f"검색 중 오류 발생: {e}")
+            return []
+
+        # CandidateComponent로 변환
+        candidates = []
+        for res in results:
+            metadata = res.get("metadata", {})
+            
+            # 필수 필드 확인 (가격 등)
+            try:
+                price = int(metadata.get("price", 0))
+            except (ValueError, TypeError):
+                price = 0
+                
+            candidates.append(
+                CandidateComponent(
+                    component_id=metadata.get("id", str(res.get("id"))),
+                    name=metadata.get("name", "Unknown Component"),
+                    price=price,
+                    match_score=res.get("similarity", 0.0),
+                    compatibility_status="compatible", # 나중에 필터링됨
+                    reasons=[], # AI가 생성하거나 룰베이스로 추가 가능
+                    specs=metadata
+                )
+            )
+            
+        return candidates
     
     def _filter_by_compatibility(
         self,
@@ -604,12 +605,39 @@ class StepByStepRAGPipeline:
             filtered = []
             for cand in candidates:
                 cand_socket = cand.specs.get("socket")
-                if not cand_socket or cand_socket == socket_req:
-                    filtered.append(cand)
+                
+                if cand.specs.get("category") in ["motherboard", "cpu_cooler"]:
+                    if not cand_socket or cand_socket == socket_req:
+                        filtered.append(cand)
+                    else:
+                        cand.compatibility_status = "incompatible"
+                        cand.reasons.append(f"소켓 불일치: {cand_socket} ≠ {socket_req}")
+                        continue 
                 else:
-                    # 호환되지 않으면 상태 변경
-                    cand.compatibility_status = "incompatible"
-                    cand.reasons.append(f"소켓 불일치: {cand_socket} ≠ {socket_req}")
+                    filtered.append(cand)
+            candidates = filtered
+
+        # 메모리 타입 호환성 필터
+        memory_req = None
+        for sel in selections:
+            if sel.category == "motherboard":
+                memory_req = sel.specs.get("memory_type")
+                break
+        
+        if memory_req:
+            filtered = []
+            for cand in candidates:
+                if cand.specs.get("category") == "memory":
+                    cand_mem_type = cand.specs.get("memory_type")
+                    if not cand_mem_type or memory_req in cand_mem_type or cand_mem_type in memory_req:
+                         # 단순 부분 일치 허용 (DDR4-3200 vs DDR4)
+                        filtered.append(cand)
+                    else:
+                        cand.compatibility_status = "incompatible"
+                        cand.reasons.append(f"메모리 타입 불일치: {cand_mem_type} ≠ {memory_req}")
+                        continue
+                else:
+                    filtered.append(cand)
             return filtered
         
         return candidates
@@ -623,7 +651,11 @@ class StepByStepRAGPipeline:
         if selection.category == "cpu":
             # CPU 선택 시 소켓 요구사항 설정
             session.context.socket_requirement = selection.specs.get("socket")
-            session.context.total_tdp += selection.specs.get("tdp", 0)
+            try:
+                tdp = float(selection.specs.get("tdp", 0))
+            except:
+                tdp = 0
+            session.context.total_tdp += int(tdp)
         
         elif selection.category == "motherboard":
             # 메인보드 선택 시 메모리 타입, 폼팩터 설정
@@ -631,7 +663,11 @@ class StepByStepRAGPipeline:
             session.context.form_factor_requirement = selection.specs.get("form_factor")
         
         elif selection.category == "gpu":
-            session.context.total_tdp += selection.specs.get("tdp", 0)
+            try:
+                tdp = float(selection.specs.get("tdp", 0))
+            except:
+                tdp = 0
+            session.context.total_tdp += int(tdp)
     
     def get_summary(self, session_id: str) -> Dict[str, Any]:
         """세션 요약 조회"""
@@ -666,43 +702,6 @@ class StepByStepRAGPipeline:
 # ============================================================================
 
 if __name__ == "__main__":
-    import json
-    
-    pipeline = StepByStepRAGPipeline()
-    
-    # 세션 시작
-    session = pipeline.start_session(budget=1500000, purpose="gaming")
-    print(f"세션 시작: {session.session_id}")
-    
-    # 1단계: CPU 후보
-    result = pipeline.get_step_candidates(session.session_id, step=1)
-    print(f"\n1단계 ({result.category}) 후보:")
-    for cand in result.candidates:
-        print(f"  - {cand.name}: {cand.price:,}원 (점수: {cand.match_score:.2f})")
-    
-    # CPU 선택
-    if result.candidates:
-        selected = result.candidates[0]
-        pipeline.select_component(
-            session.session_id,
-            step=1,
-            component_id=selected.component_id,
-            component_data={
-                "name": selected.name,
-                "price": selected.price,
-                "specs": selected.specs,
-            }
-        )
-        print(f"\n선택: {selected.name}")
-    
-    # 2단계: 메인보드 후보
-    result = pipeline.get_step_candidates(session.session_id, step=2)
-    print(f"\n2단계 ({result.category}) 후보:")
-    print(f"소켓 요구사항: {result.context.socket_requirement}")
-    for cand in result.candidates:
-        print(f"  - {cand.name}: {cand.price:,}원")
-    
-    # 세션 요약
-    summary = pipeline.get_summary(session.session_id)
-    print(f"\n세션 요약:")
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    # 통합 테스트는 별도 파일에서 수행 권장
+    pass
+

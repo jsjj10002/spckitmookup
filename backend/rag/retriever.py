@@ -31,6 +31,7 @@ class PCComponentRetriever:
         top_k: Optional[int] = None,
         category: Optional[str] = None,
         min_similarity: float = 0.5,
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """
         쿼리에 맞는 PC 부품 검색
@@ -40,6 +41,7 @@ class PCComponentRetriever:
             top_k: 검색 결과 수
             category: 특정 카테고리로 필터링 (예: "gpu")
             min_similarity: 최소 유사도 (0~1)
+            filters: 추가 메타데이터 필터 (예: {"socket": "LGA1700"})
 
         Returns:
             검색 결과 리스트
@@ -47,13 +49,15 @@ class PCComponentRetriever:
         top_k = top_k or self.top_k
 
         # 메타데이터 필터 구성
-        filter_metadata = {"category": category} if category else None
+        filter_metadata = filters or {}
+        if category:
+            filter_metadata["category"] = category
 
         # 벡터 검색 수행
         results = self.vector_store.search(
             query=query,
             top_k=top_k * 2,  # 필터링을 고려하여 더 많이 검색
-            filter_metadata=filter_metadata,
+            filter_metadata=filter_metadata if filter_metadata else None,
         )
 
         # 유사도 필터링
@@ -64,7 +68,7 @@ class PCComponentRetriever:
 
         logger.info(
             f"검색 완료: '{query}' -> {len(filtered_results)}개 부품 "
-            f"(category={category}, min_similarity={min_similarity})"
+            f"(category={category}, filters={filters}, min_similarity={min_similarity})"
         )
 
         return filtered_results
