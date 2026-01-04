@@ -11,7 +11,8 @@ from loguru import logger
 import sys
 import os
 
-from backend.rag.pipeline import RAGPipeline
+from rag.pipeline import RAGPipeline
+from rag.step_by_step import StepByStepRAGPipeline
 
 # 로깅 설정
 logger.remove()
@@ -39,6 +40,7 @@ app.add_middleware(
 
 # RAG 파이프라인 전역 인스턴스
 pipeline: Optional[RAGPipeline] = None
+step_pipeline: Optional[StepByStepRAGPipeline] = None
 
 
 # Pydantic 모델 정의
@@ -63,11 +65,23 @@ class CompareRequest(BaseModel):
     component_ids: List[str] = Field(..., description="비교할 부품 ID 리스트", min_items=2)
 
 
+# Step-by-Step 관련 모델
+class StepStartRequest(BaseModel):
+    budget: int = Field(..., description="총 예산 (원)", ge=100000)
+    purpose: str = Field("general", description="사용 목적 (gaming, workstation, general)")
+
+
+class StepSelectRequest(BaseModel):
+    step: int = Field(..., description="현재 단계 번호", ge=1, le=8)
+    component_id: str = Field(..., description="선택한 부품 ID")
+    component_data: Optional[Dict[str, Any]] = Field(None, description="부품 상세 정보")
+
+
 # 이벤트 핸들러
 @app.on_event("startup")
 async def startup_event():
     """앱 시작 시 RAG 파이프라인 초기화 및 벡터 DB 자동 초기화"""
-    global pipeline
+    global pipeline, step_pipeline
     logger.info("=" * 60)
     logger.info("🚀 RAG 파이프라인 초기화 중...")
     logger.info("=" * 60)
@@ -121,6 +135,13 @@ async def startup_event():
         else:
             logger.success(f"✅ RAG 파이프라인 초기화 완료!")
             logger.info(f"📊 벡터 DB 문서 수: {doc_count}개")
+        
+        # Step-by-Step 파이프라인 초기화
+        step_pipeline = StepByStepRAGPipeline(
+            retriever=pipeline.retriever,
+            compatibility_engine=None  # 필요시 추가
+        )
+        logger.info("✅ Step-by-Step 파이프라인 초기화 완료!")
         
         logger.info("=" * 60)
         
@@ -251,6 +272,161 @@ async def get_statistics() -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"통계 조회 실패: {str(e)}")
 
 
+# =============================================================================
+# Step-by-Step API 엔드포인트
+# =============================================================================
+
+@app.post("/step/start")
+async def start_step_session(request: StepStartRequest) -> Dict[str, Any]:
+    """
+    Step-by-Step 세션 시작
+    
+    예산과 목적을 받아 새 세션을 생성하고 CPU 선택 단계를 시작합니다.
+    """
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        logger.info(f"Step 세션 시작: 예산={request.budget:,}원, 목적={request.purpose}")
+        session = step_pipeline.start_session(
+            budget=request.budget,
+            purpose=request.purpose
+        )
+        
+        # 첫 단계(CPU) 후보 자동 조회
+        candidates_result = step_pipeline.get_step_candidates(
+            session_id=session.session_id,
+            step=1
+        )
+        
+        return {
+            "session_id": session.session_id,
+            "step": 1,
+            "category": "cpu",
+            "candidates": [c.model_dump() for c in candidates_result.candidates],
+            "allocated_budget": candidates_result.allocated_budget,
+            "remaining_budget": candidates_result.remaining_budget,
+            "next_step": candidates_result.next_step,
+            "message": "CPU 선택 단계입니다. 위 후보 중 하나를 선택해주세요."
+        }
+        
+    except Exception as e:
+        logger.error(f"Step 세션 시작 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"세션 시작 실패: {str(e)}")
+
+
+@app.get("/step/{session_id}/candidates")
+async def get_step_candidates(
+    session_id: str,
+    step: Optional[int] = None,
+    top_k: int = 5
+) -> Dict[str, Any]:
+    """
+    현재 단계의 후보 부품 조회
+    """
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        result = step_pipeline.get_step_candidates(
+            session_id=session_id,
+            step=step,
+            top_k=top_k
+        )
+        
+        return {
+            "session_id": result.session_id,
+            "step": result.step,
+            "category": result.category,
+            "candidates": [c.model_dump() for c in result.candidates],
+            "allocated_budget": result.allocated_budget,
+            "remaining_budget": result.remaining_budget,
+            "next_step": result.next_step,
+            "is_final_step": result.is_final_step
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"후보 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"후보 조회 실패: {str(e)}")
+
+
+@app.post("/step/{session_id}/select")
+async def select_component(
+    session_id: str,
+    request: StepSelectRequest
+) -> Dict[str, Any]:
+    """
+    부품 선택 및 다음 단계로 진행
+    """
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        logger.info(f"부품 선택: 세션={session_id}, 단계={request.step}, ID={request.component_id}")
+        
+        session = step_pipeline.select_component(
+            session_id=session_id,
+            step=request.step,
+            component_id=request.component_id,
+            component_data=request.component_data
+        )
+        
+        # 다음 단계 후보 자동 조회 (8단계 완료 시 제외)
+        if session.current_step <= 8:
+            next_result = step_pipeline.get_step_candidates(
+                session_id=session_id,
+                step=session.current_step
+            )
+            
+            return {
+                "session_id": session_id,
+                "selected_step": request.step,
+                "next_step": session.current_step,
+                "category": next_result.category,
+                "candidates": [c.model_dump() for c in next_result.candidates],
+                "allocated_budget": next_result.allocated_budget,
+                "remaining_budget": next_result.remaining_budget,
+                "is_final_step": next_result.is_final_step,
+                "selections_count": len(session.selections)
+            }
+        else:
+            # 모든 단계 완료
+            summary = step_pipeline.get_summary(session_id)
+            return {
+                "session_id": session_id,
+                "status": "completed",
+                "message": "모든 부품 선택이 완료되었습니다!",
+                "summary": summary
+            }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"부품 선택 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"부품 선택 실패: {str(e)}")
+
+
+@app.get("/step/{session_id}/summary")
+async def get_session_summary(session_id: str) -> Dict[str, Any]:
+    """
+    세션 요약 (현재까지 선택한 부품 목록 및 총 가격)
+    """
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        summary = step_pipeline.get_summary(session_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+        return summary
+        
+    except Exception as e:
+        logger.error(f"요약 조회 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"요약 조회 실패: {str(e)}")
+
+
 # 개발 서버 실행 (직접 실행 시)
 if __name__ == "__main__":
     import uvicorn
@@ -265,18 +441,12 @@ if __name__ == "__main__":
 
 
 
-# 프론트엔드 정적 파일 서빙 (배포용)
-import os
-
-# dist 폴더가 존재할 경우에만 정적 파일 서빙 (로컬 개발 시 충돌 방지)
-if os.path.exists("dist"):
-    app.mount("/", StaticFiles(directory="dist", html=True), name="static")
-else:
-    # 로컬 개발 등 dist가 없을 때의 안내
-    @app.get("/")
-    async def root():
-        return {
-            "service": "Spckit AI - API Server",
-            "mode": "Backend Only (Frontend not built)",
-            "docs": "/docs"
-        }
+# 루트 경로 (API 서버 정보)
+@app.get("/")
+async def root():
+    return {
+        "service": "Spckit AI - PC 부품 추천 API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "frontend": "npm run dev (port 3000)"
+    }

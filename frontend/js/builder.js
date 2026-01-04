@@ -3,7 +3,7 @@
  * 채팅, 부품 추천, 선택 기능 등을 관리한다
  */
 
-import { getPCRecommendation, extractPrice, formatPrice } from './api.js';
+import { getPCRecommendation, extractPrice, formatPrice, startStepSession, getStepCandidates, selectComponent, getSessionSummary } from './api.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -29,6 +29,9 @@ const CATEGORY_ORDER = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case'
 // 빌드 상태 관리
 let currentPhase = 'requirements'; // 'requirements' | 'building'
 let buildStageIndex = 0;
+let currentSessionId = null; // Step-by-Step 세션 ID
+let currentBudget = 1500000; // 기본 예산 (150만원)
+let currentPurpose = 'gaming'; // 기본 목적
 const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case', 'Cooler'];
 
 /**
@@ -40,67 +43,67 @@ const STORAGE_KEY = 'spckit_builder_state';
  * 초기화
  */
 function init() {
-  // 0. 새 세션인지 확인 (URL에 new=true 파라미터가 있거나, 세션 스토리지에 플래그가 없으면 초기화)
-  const urlParams = new URLSearchParams(window.location.search);
-  const isNewSession = urlParams.get('new') === 'true' || !sessionStorage.getItem('spckit_session_started');
-  
-  if (isNewSession) {
-    // 새 세션 시작: 모든 상태 초기화
-    localStorage.removeItem(STORAGE_KEY);
-    chatHistory = [];
-    selectedParts = [];
-    currentPhase = 'requirements';
-    buildStageIndex = 0;
-    sessionStorage.setItem('spckit_session_started', 'true');
-    
-    // 채팅 메시지 영역 초기화
-    chatMessages.innerHTML = '';
-    
-    console.log('새 세션 시작: 모든 상태 초기화됨');
-  } else {
-    // 기존 세션: 상태 복원
-    loadState();
-  }
+    // 0. 새 세션인지 확인 (URL에 new=true 파라미터가 있거나, 세션 스토리지에 플래그가 없으면 초기화)
+    const urlParams = new URLSearchParams(window.location.search);
+    const isNewSession = urlParams.get('new') === 'true' || !sessionStorage.getItem('spckit_session_started');
 
-  // 1. URL 파라미터 처리
-  const initialMessage = urlParams.get('message');
+    if (isNewSession) {
+        // 새 세션 시작: 모든 상태 초기화
+        localStorage.removeItem(STORAGE_KEY);
+        chatHistory = [];
+        selectedParts = [];
+        currentPhase = 'requirements';
+        buildStageIndex = 0;
+        sessionStorage.setItem('spckit_session_started', 'true');
 
-  if (initialMessage) {
-    // 히스토리가 비어있거나, 마지막 메시지와 다른 경우에만 처리 (새로고침 중복 방지)
-    const lastMsg = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1] : null;
-    if (!lastMsg || (lastMsg.role === 'user' && lastMsg.text !== initialMessage) || (lastMsg.role === 'model')) {
-        // 약간의 딜레이를 주어 로드 완료 후 실행
-        setTimeout(() => handleSendMessage(initialMessage), 100);
+        // 채팅 메시지 영역 초기화
+        chatMessages.innerHTML = '';
+
+        console.log('새 세션 시작: 모든 상태 초기화됨');
+    } else {
+        // 기존 세션: 상태 복원
+        loadState();
     }
-  } else if (chatHistory.length === 0) {
-      // 히스토리가 없고 초기 메시지도 없으면 환영 메시지
-      // addMessage('안녕하세요! 어떤 PC를 맞추고 싶으신가요?', 'ai');
-  }
 
-  // UI 복원 (선택된 부품 등)
-  updateSelectedParts();
-  
-  // 이벤트 리스너 등록
-  sendBtn.addEventListener('click', handleSendClick);
-  chatInput.addEventListener('keydown', handleKeyDown);
-  homeBtn.addEventListener('click', () => {
-    // 홈으로 이동 시 세션 플래그 제거하여 다음 방문 시 새 세션으로 시작
-    sessionStorage.removeItem('spckit_session_started');
-    window.location.href = 'index.html';
-  });
-  
-  // 페이지 로드 시 새 세션으로 시작하려면 URL에 ?new=true 추가
-  // 또는 브라우저 새 탭/새 창에서 열면 자동으로 새 세션 시작
-  
-  // Start Build 버튼 리스너
-  if (startBuildBtn) {
-    startBuildBtn.addEventListener('click', startBuildProcess);
-  }
+    // 1. URL 파라미터 처리
+    const initialMessage = urlParams.get('message');
 
-  // Next Step 버튼 리스너
-  if (nextStepBtn) {
-    nextStepBtn.addEventListener('click', handleNextStep);
-  }
+    if (initialMessage) {
+        // 히스토리가 비어있거나, 마지막 메시지와 다른 경우에만 처리 (새로고침 중복 방지)
+        const lastMsg = chatHistory.length > 0 ? chatHistory[chatHistory.length - 1] : null;
+        if (!lastMsg || (lastMsg.role === 'user' && lastMsg.text !== initialMessage) || (lastMsg.role === 'model')) {
+            // 약간의 딜레이를 주어 로드 완료 후 실행
+            setTimeout(() => handleSendMessage(initialMessage), 100);
+        }
+    } else if (chatHistory.length === 0) {
+        // 히스토리가 없고 초기 메시지도 없으면 환영 메시지
+        // addMessage('안녕하세요! 어떤 PC를 맞추고 싶으신가요?', 'ai');
+    }
+
+    // UI 복원 (선택된 부품 등)
+    updateSelectedParts();
+
+    // 이벤트 리스너 등록
+    sendBtn.addEventListener('click', handleSendClick);
+    chatInput.addEventListener('keydown', handleKeyDown);
+    homeBtn.addEventListener('click', () => {
+        // 홈으로 이동 시 세션 플래그 제거하여 다음 방문 시 새 세션으로 시작
+        sessionStorage.removeItem('spckit_session_started');
+        window.location.href = 'index.html';
+    });
+
+    // 페이지 로드 시 새 세션으로 시작하려면 URL에 ?new=true 추가
+    // 또는 브라우저 새 탭/새 창에서 열면 자동으로 새 세션 시작
+
+    // Start Build 버튼 리스너
+    if (startBuildBtn) {
+        startBuildBtn.addEventListener('click', startBuildProcess);
+    }
+
+    // Next Step 버튼 리스너
+    if (nextStepBtn) {
+        nextStepBtn.addEventListener('click', handleNextStep);
+    }
 }
 
 /**
@@ -108,22 +111,22 @@ function init() {
  */
 function getSystemSpecs() {
     const specs = [];
-    
+
     // 1. User Agent (OS, Browser)
     if (navigator.userAgent) {
         specs.push(`OS/Browser: ${navigator.userAgent}`);
     }
-    
+
     // 2. CPU Cores (Logical Processors)
     if (navigator.hardwareConcurrency) {
         specs.push(`CPU Cores: ${navigator.hardwareConcurrency}`);
     }
-    
+
     // 3. RAM (Device Memory in GB - 대략적인 값)
     if (navigator.deviceMemory) {
         specs.push(`RAM: ~${navigator.deviceMemory}GB`);
     }
-    
+
     // 4. GPU (WebGL Renderer)
     try {
         const canvas = document.createElement('canvas');
@@ -178,7 +181,7 @@ function loadState() {
                     // AI 메시지는 단순 텍스트로 복원
                     const messageDiv = document.createElement('div');
                     messageDiv.className = `message ai-message`;
-                    
+
                     const header = document.createElement('div');
                     header.className = 'message-header';
                     header.innerHTML = `
@@ -192,7 +195,7 @@ function loadState() {
                     bubble.className = 'message-bubble';
                     bubble.textContent = msg.text;
                     messageDiv.appendChild(bubble);
-                    
+
                     chatMessages.appendChild(messageDiv);
                 }
             });
@@ -209,115 +212,118 @@ function loadState() {
  * 전송 버튼 클릭 핸들러
  */
 function handleSendClick() {
-  const message = chatInput.value.trim();
-  if (message && !isLoading) {
-    handleSendMessage(message);
-    chatInput.value = '';
-  }
+    const message = chatInput.value.trim();
+    if (message && !isLoading) {
+        handleSendMessage(message);
+        chatInput.value = '';
+    }
 }
 
 /**
  * 키보드 이벤트 핸들러 (Enter로 전송)
  */
 function handleKeyDown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    handleSendClick();
-  }
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleSendClick();
+    }
 }
 
 /**
  * 메시지 전송 및 AI 응답 처리
  */
 async function handleSendMessage(message) {
-  if (isLoading) return;
+    if (isLoading) return;
 
-  isLoading = true;
-  updateSendButtonState();
+    isLoading = true;
+    updateSendButtonState();
 
-  // 사용자 메시지 UI 추가
-  addMessage(message, 'user');
-  chatHistory.push({ role: 'user', text: message });
-  saveState(); // 상태 저장
+    // 사용자 메시지 UI 추가
+    addMessage(message, 'user');
+    chatHistory.push({ role: 'user', text: message });
+    saveState(); // 상태 저장
 
-  // 실제 백엔드로 보낼 쿼리 구성
-  let queryToSend = message;
-  
-  // @내사양 태그 감지 및 처리
-  if (message.includes('@내사양')) {
-      const specs = getSystemSpecs();
-      queryToSend = `${message}\n\n[System Info]\n${specs}`;
-  }
+    // 예산 파싱 (메시지에서 숫자 추출)
+    const budgetMatch = message.match(/(\d{2,4})\s*(만\s*원|만원)/);
+    if (budgetMatch) {
+        currentBudget = parseInt(budgetMatch[1]) * 10000;
+    }
 
-  // 요구사항 분석 단계일 때도 바로 첫 번째 단계(CPU) 추천으로 진입
-  if (currentPhase === 'requirements') {
-      currentPhase = 'building';
-      buildStageIndex = 0;
-      saveState();
+    // 목적 파싱
+    if (message.includes('게임') || message.includes('게이밍') || message.includes('배그') || message.includes('롤')) {
+        currentPurpose = 'gaming';
+    } else if (message.includes('작업') || message.includes('렌더링') || message.includes('개발')) {
+        currentPurpose = 'workstation';
+    }
 
-      const loadingMessage = addMessage('', 'ai', true);
-      
-      try {
-        // 바로 CPU(첫 번째 단계) 추천 요청
-        const currentStage = BUILD_STAGES[buildStageIndex];
-        // 쿼리는 그대로 보내되, 카테고리를 명시하여 해당 부품만 검색
-        const response = await getPCRecommendation(queryToSend, { category: currentStage });
-        
-        stopDynamicLoadingText();
-        loadingMessage.remove();
+    // 요구사항 분석 단계일 때 Step-by-Step 세션 시작
+    if (currentPhase === 'requirements') {
+        currentPhase = 'building';
+        buildStageIndex = 0;
+        saveState();
 
-        await addMessageWithTyping(response.analysis, 'ai');
-        chatHistory.push({ role: 'model', text: response.analysis });
-        saveState(); // 응답 저장
-        
-        // 1단계 부품 리스트 표시
-        if (response.components && response.components.length > 0) {
-            displayRecommendations(response.components);
-        } else {
-            // 검색 결과가 없는 경우 처리
-            terminalContent.innerHTML = `<div class="terminal-line">추천된 ${currentStage}가 없습니다.</div>`;
+        const loadingMessage = addMessage('', 'ai', true);
+
+        try {
+            // Step-by-Step 세션 시작 (CPU 후보 자동 반환)
+            const response = await startStepSession(currentBudget, currentPurpose);
+            currentSessionId = response.session_id;
+
+            stopDynamicLoadingText();
+            loadingMessage.remove();
+
+            // 안내 메시지
+            const aiMessage = `예산 ${(currentBudget / 10000).toLocaleString()}만원, ${currentPurpose === 'gaming' ? '게임용' : currentPurpose === 'workstation' ? '작업용' : '일반용'} PC 견적을 시작합니다.\n\n먼저 **CPU**를 선택해주세요. 아래 후보 중 원하는 제품을 클릭하세요.`;
+            await addMessageWithTyping(aiMessage, 'ai');
+            chatHistory.push({ role: 'model', text: aiMessage });
+            saveState();
+
+            // CPU 후보 표시
+            if (response.candidates && response.candidates.length > 0) {
+                displayStepCandidates(response.candidates, response.step);
+            } else {
+                terminalContent.innerHTML = `<div class="terminal-line">추천된 CPU가 없습니다.</div>`;
+            }
+
+        } catch (error) {
+            console.error('세션 시작 오류:', error);
+            stopDynamicLoadingText();
+            loadingMessage.remove();
+            addMessage(error.message || '세션 시작에 실패했습니다.', 'error');
+        } finally {
+            isLoading = false;
+            updateSendButtonState();
         }
+    } else {
+        // 이미 빌드 진행 중인 경우 (추가 질문)
+        // 기존 RAG 쿼리로 처리 (질문 응답)
+        const loadingMessage = addMessage('', 'ai', true);
+        try {
+            const currentStage = BUILD_STAGES[buildStageIndex];
+            const response = await getPCRecommendation(message, { category: currentStage });
 
-      } catch (error) {
-        console.error('메시지 전송 오류:', error);
-        stopDynamicLoadingText();
-        loadingMessage.remove();
-        addMessage(error.message || '오류가 발생했습니다', 'error');
-      } finally {
-        isLoading = false;
-        updateSendButtonState();
-      }
-  } else {
-      // 이미 빌드 진행 중인 경우 (추가 질문이나 다음 단계)
-      // 현재 단계의 부품에 대한 질문으로 간주
-      const loadingMessage = addMessage('', 'ai', true);
-      try {
-          // 현재 단계의 컨텍스트를 포함하여 질의
-          const currentStage = BUILD_STAGES[buildStageIndex];
-          const response = await getPCRecommendation(queryToSend, { category: currentStage });
-          
-          stopDynamicLoadingText();
-          loadingMessage.remove();
-          
-          await addMessageWithTyping(response.analysis, 'ai');
-          chatHistory.push({ role: 'model', text: response.analysis });
-          saveState(); // 응답 저장
-          
-          // 부품 리스트 업데이트
-          if (response.components && response.components.length > 0) {
-              displayRecommendations(response.components);
-          }
+            stopDynamicLoadingText();
+            loadingMessage.remove();
 
-      } catch (error) {
-        console.error('오류:', error);
-        stopDynamicLoadingText();
-        loadingMessage.remove();
-        addMessage('처리 중 오류가 발생했습니다.', 'error');
-      } finally {
-        isLoading = false;
-        updateSendButtonState();
-      }
-  }
+            await addMessageWithTyping(response.analysis, 'ai');
+            chatHistory.push({ role: 'model', text: response.analysis });
+            saveState();
+
+            // 부품 리스트 업데이트
+            if (response.components && response.components.length > 0) {
+                displayRecommendations(response.components);
+            }
+
+        } catch (error) {
+            console.error('오류:', error);
+            stopDynamicLoadingText();
+            loadingMessage.remove();
+            addMessage('처리 중 오류가 발생했습니다.', 'error');
+        } finally {
+            isLoading = false;
+            updateSendButtonState();
+        }
+    }
 }
 
 /**
@@ -329,10 +335,10 @@ async function startBuildProcess() {
     currentPhase = 'building';
     buildStageIndex = 0; // CPU부터 시작
     saveState();
-    
+
     // UI 업데이트
     addMessageWithTyping("네, 알겠습니다. 이제 본격적으로 부품을 하나씩 맞춰볼까요? 먼저 **CPU**부터 살펴보겠습니다.", 'ai');
-    
+
     // 첫 단계 부품 로드
     await loadStageComponents(BUILD_STAGES[buildStageIndex]);
 }
@@ -351,20 +357,20 @@ async function loadStageComponents(stage) {
         // 이전 대화 맥락에서 쿼리 추출 (가장 최근 사용자 메시지 사용)
         // 전체 요구사항을 다 포함하는게 좋겠지만, 간단하게 최근 메시지로 처리
         // 더 좋은 방법: chatHistory 전체를 요약하거나 system prompt에 포함
-        
+
         // 여기서는 "단계별"이므로 이전 단계에서 선택한 부품 정보도 포함하면 좋음 (호환성 위해)
         // 하지만 백엔드가 아직 호환성 체크 로직이 완벽하지 않으므로 단순 쿼리
-        
+
         const lastUserMsg = chatHistory.filter(m => m.role === 'user').pop()?.text || "가성비 좋은 PC";
-        const query = `${lastUserMsg}`; 
+        const query = `${lastUserMsg}`;
 
         const response = await getPCRecommendation(query, { category: stage });
 
         hideTerminalLoading();
-        
+
         // 추천 목록 표시
         displayRecommendations(response.components);
-        
+
         // 선택된 부품이 있다면 표시 (이전 단계에서 돌아왔을 때 등)
         highlightSelectedInRecommendation();
 
@@ -376,31 +382,233 @@ async function loadStageComponents(stage) {
 }
 
 /**
- * 다음 단계로 이동 (Next Step 버튼)
+ * Step-by-Step API 후보 표시
+ */
+function displayStepCandidates(candidates, step) {
+    terminalContent.innerHTML = '';
+
+    if (!candidates || candidates.length === 0) {
+        terminalContent.innerHTML = '<div class="terminal-line">추천 부품이 없습니다</div>';
+        return;
+    }
+
+    const list = document.createElement('div');
+    list.className = 'recommendation-list';
+
+    candidates.forEach((candidate, index) => {
+        // Step-by-Step API 응답 형식을 기존 형식으로 변환
+        const component = {
+            category: BUILD_STAGES[step - 1] || 'Unknown',
+            name: candidate.name || 'Unknown Component',
+            price: candidate.price ? `${candidate.price.toLocaleString()}원` : '가격 미정',
+            hashtags: candidate.reasons || [],
+            features: candidate.reasons || [],
+            component_id: candidate.component_id,
+            step: step,
+            specs: candidate.specs || {}
+        };
+
+        const card = createStepCard(component, step);
+        card.style.animationDelay = `${index * 0.05}s`;
+        card.classList.add('animate-in');
+        list.appendChild(card);
+    });
+
+    terminalContent.appendChild(list);
+}
+
+/**
+ * Step-by-Step 카드 생성 (선택 시 API 호출)
+ */
+function createStepCard(component, step) {
+    const card = document.createElement('div');
+    card.className = 'recommendation-card';
+    card.dataset.componentId = component.component_id;
+    card.dataset.step = step;
+    card.dataset.name = component.name;
+    card.dataset.category = component.category;
+
+    const categoryKey = Object.keys(COMPONENT_ICONS).find(key =>
+        component.category.toLowerCase().includes(key.toLowerCase())
+    ) || 'Default';
+
+    const iconSvg = COMPONENT_ICONS[categoryKey];
+    const tags = (component.hashtags || component.features || []).slice(0, 3);
+    const tagsHtml = tags.map(tag => `<span class="tag">#${tag.replace('#', '')}</span>`).join('');
+
+    card.innerHTML = `
+        <div class="card-main-content">
+            <div class="card-header">
+                <div class="card-icon">${iconSvg}</div>
+                <div class="card-info">
+                    <div class="card-category">${component.category}</div>
+                    <div class="card-name" title="${component.name}">${component.name}</div>
+                </div>
+            </div>
+            <div class="card-details">
+                <div class="card-tags">${tagsHtml}</div>
+                <div class="card-price">${component.price}</div>
+            </div>
+        </div>
+    `;
+
+    // 클릭 시 부품 선택 API 호출
+    card.addEventListener('click', async () => {
+        if (card.classList.contains('selected') || isLoading) return;
+        await handleStepCardClick(card, component);
+    });
+
+    return card;
+}
+
+/**
+ * Step 카드 클릭 핸들러 (부품 선택 API 호출)
+ */
+async function handleStepCardClick(card, component) {
+    if (!currentSessionId) {
+        console.error('세션 ID가 없습니다.');
+        return;
+    }
+
+    isLoading = true;
+    showTerminalLoading('부품 선택 중...');
+
+    try {
+        // 부품 선택 API 호출
+        const response = await selectComponent(
+            currentSessionId,
+            component.step,
+            component.component_id,
+            {
+                name: component.name,
+                price: extractPrice(component.price),
+                specs: component.specs
+            }
+        );
+
+        hideTerminalLoading();
+
+        // 선택한 부품을 로컬 상태에 추가
+        selectedParts.push({
+            category: component.category,
+            name: component.name,
+            price: component.price
+        });
+        updateSelectedParts();
+        saveState();
+
+        // 카드 선택 표시
+        card.classList.add('selected');
+        card.style.opacity = '0.5';
+
+        // 완료 여부 확인
+        if (response.status === 'completed') {
+            // 모든 단계 완료
+            await addMessageWithTyping("모든 부품 선택이 완료되었습니다! 견적을 확인해보세요.", 'ai');
+            displayBuildSummary(response.summary);
+        } else {
+            // 다음 단계로 이동
+            buildStageIndex = response.next_step - 1;
+            saveState();
+
+            const nextCategory = BUILD_STAGES[buildStageIndex];
+            await addMessageWithTyping(`${component.category} 선택 완료! 다음은 **${nextCategory}**입니다.`, 'ai');
+
+            // 다음 단계 후보 표시
+            if (response.candidates && response.candidates.length > 0) {
+                displayStepCandidates(response.candidates, response.next_step);
+            } else {
+                terminalContent.innerHTML = `<div class="terminal-line">추천된 ${nextCategory}가 없습니다.</div>`;
+            }
+        }
+
+    } catch (error) {
+        console.error('부품 선택 오류:', error);
+        hideTerminalLoading();
+        addMessage('부품 선택에 실패했습니다.', 'error');
+    } finally {
+        isLoading = false;
+    }
+}
+
+/**
+ * 빌드 요약 표시
+ */
+function displayBuildSummary(summary) {
+    if (!summary) return;
+
+    let html = '<div class="build-summary">';
+    html += `<div class="summary-header"><h3>견적 요약</h3></div>`;
+    html += `<div class="summary-budget">예산: ${summary.total_budget?.toLocaleString() || 0}원</div>`;
+    html += `<div class="summary-total">총 가격: ${summary.total_price?.toLocaleString() || 0}원</div>`;
+    html += `<div class="summary-remaining">남은 예산: ${summary.remaining_budget?.toLocaleString() || 0}원</div>`;
+
+    if (summary.selections && summary.selections.length > 0) {
+        html += '<div class="summary-list">';
+        summary.selections.forEach(sel => {
+            html += `<div class="summary-item"><span>${sel.category}</span>: ${sel.name} (${sel.price?.toLocaleString() || 0}원)</div>`;
+        });
+        html += '</div>';
+    }
+
+    html += '</div>';
+    terminalContent.innerHTML = html;
+}
+
+/**
+ * 다음 단계로 이동 (Next Step 버튼) - Step-by-Step API 연동
  */
 async function handleNextStep() {
-    // 현재 단계에서 선택된 부품이 있는지 확인
-    const currentStage = BUILD_STAGES[buildStageIndex];
-    const isSelected = selectedParts.some(p => p.category.toLowerCase().includes(currentStage.toLowerCase()));
-
-    if (!isSelected) {
+    if (!currentSessionId) {
+        // 세션이 없으면 기존 방식으로 동작
+        const currentStage = BUILD_STAGES[buildStageIndex];
         await addMessageWithTyping(`${currentStage}를 선택하지 않으셨네요. 다음 단계로 넘어갑니다.`, 'ai');
-    } else {
-        await addMessageWithTyping(`${currentStage} 선택 완료! 다음 부품을 보시죠.`, 'ai');
+
+        buildStageIndex++;
+        saveState();
+
+        if (buildStageIndex >= BUILD_STAGES.length) {
+            await addMessageWithTyping("모든 부품 선택이 완료되었습니다! 견적을 확인해보세요.", 'ai');
+            terminalContent.innerHTML = '<div class="terminal-line success">All steps completed!</div>';
+            return;
+        }
+
+        const nextStage = BUILD_STAGES[buildStageIndex];
+        await addMessageWithTyping(`다음은 **${nextStage}**입니다.`, 'ai');
+        await loadStageComponents(nextStage);
+        return;
     }
+
+    // Step-by-Step API 기반 동작
+    const currentStage = BUILD_STAGES[buildStageIndex];
+    await addMessageWithTyping(`${currentStage}를 건너뛰고 다음 단계로 넘어갑니다.`, 'ai');
 
     buildStageIndex++;
     saveState();
 
     if (buildStageIndex >= BUILD_STAGES.length) {
-        await addMessageWithTyping("모든 부품 선택이 완료되었습니다! 견적을 확인해보세요.", 'ai');
-        terminalContent.innerHTML = '<div class="terminal-line success">All steps completed! Check your build summary.</div>';
+        // 요약 조회
+        try {
+            const summary = await getSessionSummary(currentSessionId);
+            await addMessageWithTyping("모든 부품 선택이 완료되었습니다!", 'ai');
+            displayBuildSummary(summary);
+        } catch (error) {
+            terminalContent.innerHTML = '<div class="terminal-line success">All steps completed!</div>';
+        }
         return;
     }
 
-    const nextStage = BUILD_STAGES[buildStageIndex];
-    await addMessageWithTyping(`다음은 **${nextStage}**입니다.`, 'ai');
-    await loadStageComponents(nextStage);
+    // 다음 단계 후보 조회
+    try {
+        const nextStage = BUILD_STAGES[buildStageIndex];
+        await addMessageWithTyping(`다음은 **${nextStage}**입니다.`, 'ai');
+
+        const result = await getStepCandidates(currentSessionId, buildStageIndex + 1);
+        displayStepCandidates(result.candidates, result.step);
+    } catch (error) {
+        console.error('다음 단계 조회 실패:', error);
+        await loadStageComponents(BUILD_STAGES[buildStageIndex]);
+    }
 }
 
 
@@ -408,46 +616,46 @@ async function handleNextStep() {
  * 채팅 메시지 추가
  */
 function addMessage(text, type = 'user', isLoading = false) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type}-message`;
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}-message`;
 
-  if (type === 'ai') {
-    const header = document.createElement('div');
-    header.className = 'message-header';
-    header.innerHTML = `
+    if (type === 'ai') {
+        const header = document.createElement('div');
+        header.className = 'message-header';
+        header.innerHTML = `
       <svg class="icon-bolt-small" width="40" height="14" viewBox="0 0 40 14" fill="currentColor">
         <text x="0" y="12" font-size="14" font-family="Inter" font-weight="700">Spckit AI</text>
       </svg>
     `;
-    messageDiv.appendChild(header);
-  }
+        messageDiv.appendChild(header);
+    }
 
-  if (isLoading) {
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'thinking-indicator';
-    loadingDiv.innerHTML = `
+    if (isLoading) {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'thinking-indicator';
+        loadingDiv.innerHTML = `
       <svg class="spinner" width="18" height="18" viewBox="0 0 18 18">
         <circle cx="9" cy="9" r="7" stroke="currentColor" stroke-width="2" fill="none" opacity="0.3"/>
         <path d="M9 2a7 7 0 0 1 7 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" />
       </svg>
       <span class="thinking-text">분석 중...</span>
     `;
-    messageDiv.appendChild(loadingDiv);
+        messageDiv.appendChild(loadingDiv);
 
-    // 동적 로딩 텍스트 시작
-    startDynamicLoadingText(messageDiv.querySelector('.thinking-text'));
+        // 동적 로딩 텍스트 시작
+        startDynamicLoadingText(messageDiv.querySelector('.thinking-text'));
 
-  } else {
-    const bubble = document.createElement('div');
-    bubble.className = 'message-bubble';
-    bubble.textContent = text;
-    messageDiv.appendChild(bubble);
-  }
+    } else {
+        const bubble = document.createElement('div');
+        bubble.className = 'message-bubble';
+        bubble.textContent = text;
+        messageDiv.appendChild(bubble);
+    }
 
-  chatMessages.appendChild(messageDiv);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  return messageDiv;
+    return messageDiv;
 }
 
 /**
@@ -455,165 +663,165 @@ function addMessage(text, type = 'user', isLoading = false) {
  */
 let loadingInterval;
 function startDynamicLoadingText(element) {
-  const steps = [
-    "요구사항 분석 중...",
-    "부품 검색 중...",
-    "최적의 부품 선별 중...",
-    "답변 생성 중..."
-  ];
-  let index = 0;
+    const steps = [
+        "요구사항 분석 중...",
+        "부품 검색 중...",
+        "최적의 부품 선별 중...",
+        "답변 생성 중..."
+    ];
+    let index = 0;
 
-  // 초기 텍스트 설정
-  element.textContent = steps[0];
+    // 초기 텍스트 설정
+    element.textContent = steps[0];
 
-  if (loadingInterval) clearInterval(loadingInterval);
+    if (loadingInterval) clearInterval(loadingInterval);
 
-  loadingInterval = setInterval(() => {
-    index = (index + 1) % steps.length;
-    
-    // 텍스트 변경 애니메이션
-    element.style.opacity = '0';
-    element.style.transform = 'translateY(5px)';
-    
-    setTimeout(() => {
-      element.textContent = steps[index];
-      element.style.opacity = '1';
-      element.style.transform = 'translateY(0)';
-    }, 300);
+    loadingInterval = setInterval(() => {
+        index = (index + 1) % steps.length;
 
-  }, 1500); // 1.5초 간격 (더 빠르게)
+        // 텍스트 변경 애니메이션
+        element.style.opacity = '0';
+        element.style.transform = 'translateY(5px)';
+
+        setTimeout(() => {
+            element.textContent = steps[index];
+            element.style.opacity = '1';
+            element.style.transform = 'translateY(0)';
+        }, 300);
+
+    }, 1500); // 1.5초 간격 (더 빠르게)
 }
 
 function stopDynamicLoadingText() {
-  if (loadingInterval) {
-    clearInterval(loadingInterval);
-    loadingInterval = null;
-  }
+    if (loadingInterval) {
+        clearInterval(loadingInterval);
+        loadingInterval = null;
+    }
 }
 
 /**
  * 타이핑 효과로 메시지 추가
  */
 async function addMessageWithTyping(text, type = 'ai') {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${type}-message`;
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}-message`;
 
-  if (type === 'ai') {
-    const header = document.createElement('div');
-    header.className = 'message-header';
-    header.innerHTML = `
+    if (type === 'ai') {
+        const header = document.createElement('div');
+        header.className = 'message-header';
+        header.innerHTML = `
       <svg class="icon-bolt-small" width="40" height="14" viewBox="0 0 40 14" fill="currentColor">
         <text x="0" y="12" font-size="14" font-family="Inter" font-weight="700">Spckit AI</text>
       </svg>
     `;
-    messageDiv.appendChild(header);
-  }
+        messageDiv.appendChild(header);
+    }
 
-  const bubble = document.createElement('div');
-  bubble.className = 'message-bubble';
-  messageDiv.appendChild(bubble);
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    messageDiv.appendChild(bubble);
 
-  chatMessages.appendChild(messageDiv);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  let charIndex = 0;
-  // 타이핑 속도 개선 (기존 15ms -> 8ms)
-  const typingSpeed = 8; 
+    let charIndex = 0;
+    // 타이핑 속도 개선 (기존 15ms -> 8ms)
+    const typingSpeed = 8;
 
-  return new Promise((resolve) => {
-    const intervalId = setInterval(() => {
-      if (charIndex < text.length) {
-        bubble.textContent = text.substring(0, charIndex + 1);
-        charIndex++;
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      } else {
-        clearInterval(intervalId);
-        resolve();
-      }
-    }, typingSpeed);
-  });
+    return new Promise((resolve) => {
+        const intervalId = setInterval(() => {
+            if (charIndex < text.length) {
+                bubble.textContent = text.substring(0, charIndex + 1);
+                charIndex++;
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } else {
+                clearInterval(intervalId);
+                resolve();
+            }
+        }, typingSpeed);
+    });
 }
 
 // 아이콘 정의
 const COMPONENT_ICONS = {
-  'CPU': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
-  'GPU': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="11" cy="12" r="2"/><circle cx="17" cy="12" r="2"/><path d="M2 10h4v4H2z"/></svg>',
-  'RAM': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16h20V4H2zm4 16V4m4 16V4m4 16V4m4 16V4"/></svg>',
-  'SSD': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M6 10h12M6 14h12"/></svg>',
-  'Mainboard': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h2v2H8zm4 0h4v4h-4zM8 14h2v2H8z"/></svg>',
-  'Power': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 12h.01"/><circle cx="12" cy="12" r="4"/></svg>',
-  'Case': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 6h4"/></svg>',
-  'Cooler': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg>',
-  'Default': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
+    'CPU': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>',
+    'GPU': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="11" cy="12" r="2"/><circle cx="17" cy="12" r="2"/><path d="M2 10h4v4H2z"/></svg>',
+    'RAM': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4v16h20V4H2zm4 16V4m4 16V4m4 16V4m4 16V4"/></svg>',
+    'SSD': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="2"/><path d="M6 10h12M6 14h12"/></svg>',
+    'Mainboard': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 8h2v2H8zm4 0h4v4h-4zM8 14h2v2H8z"/></svg>',
+    'Power': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M12 12h.01"/><circle cx="12" cy="12" r="4"/></svg>',
+    'Case': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 6h4"/></svg>',
+    'Cooler': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg>',
+    'Default': '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
 };
 
 /**
  * 추천 부품 표시 (카드 스타일)
  */
 function displayRecommendations(components) {
-  // 로딩 중이 아닐 때만 내용 지우기 (중복 방지)
-  if (!terminalLoading.style.display || terminalLoading.style.display === 'none') {
-      terminalContent.innerHTML = '';
-  }
-
-  if (!components || components.length === 0) {
-    terminalContent.innerHTML = '<div class="terminal-line">추천 부품이 없습니다</div>';
-    return;
-  }
-
-  const list = document.createElement('div');
-  list.className = 'recommendation-list';
-
-  components.forEach((component, index) => {
-    const card = createRecommendationCard(component);
-    // 순차적 등장 애니메이션 딜레이 (속도 개선)
-    card.style.animationDelay = `${index * 0.05}s`;
-    card.classList.add('animate-in');
-    
-    // 이미 선택된 부품인지 확인하여 스타일 적용
-    const isSelected = selectedParts.some(p => p.name === component.name && p.category === component.category);
-    if (isSelected) {
-        card.classList.add('selected');
-        card.style.opacity = '0.5'; // 선택된 것은 흐리게
+    // 로딩 중이 아닐 때만 내용 지우기 (중복 방지)
+    if (!terminalLoading.style.display || terminalLoading.style.display === 'none') {
+        terminalContent.innerHTML = '';
     }
 
-    list.appendChild(card);
-  });
+    if (!components || components.length === 0) {
+        terminalContent.innerHTML = '<div class="terminal-line">추천 부품이 없습니다</div>';
+        return;
+    }
 
-  terminalContent.appendChild(list);
+    const list = document.createElement('div');
+    list.className = 'recommendation-list';
+
+    components.forEach((component, index) => {
+        const card = createRecommendationCard(component);
+        // 순차적 등장 애니메이션 딜레이 (속도 개선)
+        card.style.animationDelay = `${index * 0.05}s`;
+        card.classList.add('animate-in');
+
+        // 이미 선택된 부품인지 확인하여 스타일 적용
+        const isSelected = selectedParts.some(p => p.name === component.name && p.category === component.category);
+        if (isSelected) {
+            card.classList.add('selected');
+            card.style.opacity = '0.5'; // 선택된 것은 흐리게
+        }
+
+        list.appendChild(card);
+    });
+
+    terminalContent.appendChild(list);
 }
 
 /**
  * 추천 카드 생성
  */
 function createRecommendationCard(component) {
-  const card = document.createElement('div');
-  card.className = 'recommendation-card';
-  // 데이터 속성으로 식별자 저장 (재선택/해제용)
-  card.dataset.name = component.name;
-  card.dataset.category = component.category;
+    const card = document.createElement('div');
+    card.className = 'recommendation-card';
+    // 데이터 속성으로 식별자 저장 (재선택/해제용)
+    card.dataset.name = component.name;
+    card.dataset.category = component.category;
 
-  // 카테고리 대소문자 처리 및 매핑
-  const categoryKey = Object.keys(COMPONENT_ICONS).find(key =>
-    component.category.toLowerCase().includes(key.toLowerCase())
-  ) || 'Default';
+    // 카테고리 대소문자 처리 및 매핑
+    const categoryKey = Object.keys(COMPONENT_ICONS).find(key =>
+        component.category.toLowerCase().includes(key.toLowerCase())
+    ) || 'Default';
 
-  const iconSvg = COMPONENT_ICONS[categoryKey];
+    const iconSvg = COMPONENT_ICONS[categoryKey];
 
-  // 해시태그 처리 (hashtags가 없으면 features 사용)
-  const tags = component.hashtags && component.hashtags.length > 0
-    ? component.hashtags
-    : (component.features || []);
+    // 해시태그 처리 (hashtags가 없으면 features 사용)
+    const tags = component.hashtags && component.hashtags.length > 0
+        ? component.hashtags
+        : (component.features || []);
 
-  const tagsHtml = tags
-    .slice(0, 3) // 최대 3개
-    .map(tag => {
-      const text = tag.startsWith('#') ? tag : `#${tag}`;
-      return `<span class="tag">${text}</span>`;
-    })
-    .join('');
+    const tagsHtml = tags
+        .slice(0, 3) // 최대 3개
+        .map(tag => {
+            const text = tag.startsWith('#') ? tag : `#${tag}`;
+            return `<span class="tag">${text}</span>`;
+        })
+        .join('');
 
-  card.innerHTML = `
+    card.innerHTML = `
     <div class="card-main-content">
         <div class="card-header">
         <div class="card-icon">${iconSvg}</div>
@@ -661,30 +869,30 @@ function createRecommendationCard(component) {
     </div>
   `;
 
-  // 클릭 이벤트 - 부품 선택 (메인 콘텐츠 영역만)
-  const mainContent = card.querySelector('.card-main-content');
-  mainContent.addEventListener('click', (e) => {
-    // 토글 버튼 클릭은 제외
-    if (e.target.closest('.card-details-toggle')) return;
-    
-    // 이미 선택된 경우 무시
-    if (card.classList.contains('selected')) return;
-    
-    handleCardClick(e, card, component);
-  });
+    // 클릭 이벤트 - 부품 선택 (메인 콘텐츠 영역만)
+    const mainContent = card.querySelector('.card-main-content');
+    mainContent.addEventListener('click', (e) => {
+        // 토글 버튼 클릭은 제외
+        if (e.target.closest('.card-details-toggle')) return;
 
-  // 토글 버튼 이벤트
-  const toggleBtn = card.querySelector('.card-details-toggle');
-  toggleBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // 카드 선택 방지
-      const isExpanded = card.classList.toggle('expanded');
-      
-      if (isExpanded) {
-          renderCardDetails(card, component);
-      }
-  });
+        // 이미 선택된 경우 무시
+        if (card.classList.contains('selected')) return;
 
-  return card;
+        handleCardClick(e, card, component);
+    });
+
+    // 토글 버튼 이벤트
+    const toggleBtn = card.querySelector('.card-details-toggle');
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); // 카드 선택 방지
+        const isExpanded = card.classList.toggle('expanded');
+
+        if (isExpanded) {
+            renderCardDetails(card, component);
+        }
+    });
+
+    return card;
 }
 
 /**
@@ -694,7 +902,7 @@ async function renderCardDetails(cardElement, component) {
     const aiTextEl = cardElement.querySelector('.ai-text');
     const priceCanvas = cardElement.querySelector('.price-chart');
     const radarCanvas = cardElement.querySelector('.radar-chart');
-    
+
     // 1. AI 요약 텍스트 시뮬레이션 (타이핑 효과)
     if (!aiTextEl.dataset.loaded) {
         aiTextEl.textContent = '';
@@ -715,7 +923,7 @@ async function renderCardDetails(cardElement, component) {
         renderPriceChart(priceCanvas);
         priceCanvas.dataset.loaded = 'true';
     }
-    
+
     if (!radarCanvas.dataset.loaded) {
         renderRadarChart(radarCanvas);
         radarCanvas.dataset.loaded = 'true';
@@ -729,10 +937,10 @@ function generateMockAISummary(component) {
     const tdp = Math.floor(Math.random() * 50) + 65;
     const clockSpeed = (Math.random() * 1.5 + 4.0).toFixed(1);
     const temp = Math.floor(Math.random() * 15) + 55;
-    
+
     const categoryTemplates = {
         'CPU': [
-            `Cinebench R23 멀티: ${benchScore.toLocaleString()}점 | 싱글: ${Math.floor(benchScore/10)}점. 부스트 ${clockSpeed}GHz, TDP ${tdp}W. 풀로드 ${temp}°C 수준으로 공랭 쿨러로 충분히 대응 가능합니다.`,
+            `Cinebench R23 멀티: ${benchScore.toLocaleString()}점 | 싱글: ${Math.floor(benchScore / 10)}점. 부스트 ${clockSpeed}GHz, TDP ${tdp}W. 풀로드 ${temp}°C 수준으로 공랭 쿨러로 충분히 대응 가능합니다.`,
             `PassMark ${benchScore.toLocaleString()}점. ${clockSpeed}GHz 터보, ${tdp}W 설계. 게이밍 144Hz 안정 | 멀티태스킹 우수. 가성비 최상위 등급입니다.`
         ],
         'GPU': [
@@ -740,25 +948,25 @@ function generateMockAISummary(component) {
             `1440p 게이밍 타겟 최적 모델. DLSS 3.0/FSR 2.0 지원으로 실효 성능 30% 향상. 레이트레이싱 코어 탑재.`
         ],
         'RAM': [
-            `XMP 3.0 지원, 지연 시간 CL${Math.floor(Math.random()*6)+14}. 듀얼채널 최대 대역폭 ${benchScore/500 | 0}GB/s. 게이밍/작업 병행 환경 권장.`,
+            `XMP 3.0 지원, 지연 시간 CL${Math.floor(Math.random() * 6) + 14}. 듀얼채널 최대 대역폭 ${benchScore / 500 | 0}GB/s. 게이밍/작업 병행 환경 권장.`,
             `DDR5 최적화 다이, 저전압(1.1V) 동작. 오버클럭 잠재력 우수, 히트스프레더 장착으로 안정성 확보.`
         ],
         'SSD': [
-            `순차 읽기 ${(benchScore/3).toFixed(0)}MB/s | 쓰기 ${(benchScore/4).toFixed(0)}MB/s. NVMe Gen4 x4, DRAM 캐시 탑재. 내구성 TBW ${Math.floor(Math.random()*400)+600}TB.`,
+            `순차 읽기 ${(benchScore / 3).toFixed(0)}MB/s | 쓰기 ${(benchScore / 4).toFixed(0)}MB/s. NVMe Gen4 x4, DRAM 캐시 탑재. 내구성 TBW ${Math.floor(Math.random() * 400) + 600}TB.`,
             `PCIe 4.0 풀스펙. 랜덤 4K 성능 최적화로 OS/게임 로딩 체감 속도 우수. SLC 캐싱으로 대용량 복사 시에도 속도 유지.`
         ],
         'MAINBOARD': [
-            `VRM ${Math.floor(Math.random()*4)+10}+2페이즈 설계. DDR5 최대 ${Math.floor(Math.random()*1400)+6400}MHz 지원. M.2 슬롯 ${Math.floor(Math.random()*2)+2}개, USB 3.2 Gen2 다수 제공.`,
+            `VRM ${Math.floor(Math.random() * 4) + 10}+2페이즈 설계. DDR5 최대 ${Math.floor(Math.random() * 1400) + 6400}MHz 지원. M.2 슬롯 ${Math.floor(Math.random() * 2) + 2}개, USB 3.2 Gen2 다수 제공.`,
             `오버클럭 지원 칩셋. BIOS 최적화로 안정성 우수. 통합 I/O 쉴드, RGB 헤더 3개 제공.`
         ]
     };
-    
+
     // 카테고리에 맞는 템플릿 선택 또는 기본 템플릿
     const templates = categoryTemplates[category] || [
-        `벤치마크 점수 ${benchScore.toLocaleString()}점 기록. 동급 대비 ${Math.floor(Math.random()*15)+10}% 높은 효율. TDP ${tdp}W 설계로 전성비 우수.`,
+        `벤치마크 점수 ${benchScore.toLocaleString()}점 기록. 동급 대비 ${Math.floor(Math.random() * 15) + 10}% 높은 효율. TDP ${tdp}W 설계로 전성비 우수.`,
         `성능/가격 균형 최적화 제품. 실사용 테스트에서 안정성 검증 완료. 3년 무상 A/S 지원.`
     ];
-    
+
     return templates[Math.floor(Math.random() * templates.length)];
 }
 
@@ -766,7 +974,7 @@ function generateMockAISummary(component) {
 function renderPriceChart(canvas) {
     const labels = ['5개월 전', '4개월 전', '3개월 전', '2개월 전', '1개월 전', '현재', '1개월 뒤(예측)'];
     const basePrice = Math.floor(Math.random() * 50000) + 180000;
-    
+
     // 과거 데이터 생성 (현재 기준 변동)
     const data = [];
     for (let i = 5; i >= 1; i--) {
@@ -774,11 +982,11 @@ function renderPriceChart(canvas) {
         data.push(basePrice + variation);
     }
     data.push(basePrice); // 현재 가격
-    
+
     // 1개월 뒤 예측 (약간의 하락 트렌드 시뮬레이션)
     const predictedPrice = basePrice - Math.floor(Math.random() * 8000) - 2000;
     data.push(predictedPrice);
-    
+
     const chart = new Chart(canvas, {
         type: 'line',
         data: {
@@ -813,8 +1021,8 @@ function renderPriceChart(canvas) {
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                tooltip: { 
-                    mode: 'index', 
+                tooltip: {
+                    mode: 'index',
                     intersect: false,
                     backgroundColor: 'rgba(11, 12, 15, 0.95)',
                     titleColor: '#fff',
@@ -830,17 +1038,17 @@ function renderPriceChart(canvas) {
                 }
             },
             scales: {
-                x: { 
+                x: {
                     display: true,
                     grid: { display: false },
-                    ticks: { 
-                        color: '#73737b', 
+                    ticks: {
+                        color: '#73737b',
                         font: { size: 8 },
                         maxRotation: 45,
                         minRotation: 0
                     }
                 },
-                y: { 
+                y: {
                     display: false,
                     min: Math.min(...data) * 0.95,
                     max: Math.max(...data) * 1.05
@@ -853,7 +1061,7 @@ function renderPriceChart(canvas) {
             }
         }
     });
-    
+
     // 리사이즈 처리를 위해 canvas에 차트 인스턴스 저장
     canvas._chartInstance = chart;
 }
@@ -875,7 +1083,7 @@ function renderRadarChart(canvas) {
                 ],
                 backgroundColor: [
                     'rgba(20, 136, 252, 0.85)',
-                    'rgba(90, 247, 142, 0.85)', 
+                    'rgba(90, 247, 142, 0.85)',
                     'rgba(255, 200, 60, 0.85)',
                     'rgba(154, 237, 254, 0.85)',
                     'rgba(255, 99, 132, 0.85)'
@@ -909,7 +1117,7 @@ function renderRadarChart(canvas) {
                 },
                 y: {
                     grid: { display: false },
-                    ticks: { 
+                    ticks: {
                         color: '#b0b0b0',
                         font: { size: 9, weight: '500' }
                     }
@@ -917,7 +1125,7 @@ function renderRadarChart(canvas) {
             }
         }
     });
-    
+
     canvas._chartInstance = chart;
 }
 
@@ -925,184 +1133,184 @@ function renderRadarChart(canvas) {
  * 카드 클릭 핸들러 (애니메이션 + 선택 로직)
  */
 function handleCardClick(e, cardElement, component) {
-  // 1. 쑤욱 들어가는 애니메이션 (Fly Effect)
-  const rect = cardElement.getBoundingClientRect();
-  const targetRect = fileList.getBoundingClientRect();
+    // 1. 쑤욱 들어가는 애니메이션 (Fly Effect)
+    const rect = cardElement.getBoundingClientRect();
+    const targetRect = fileList.getBoundingClientRect();
 
-  const flyingElement = cardElement.cloneNode(true);
-  flyingElement.classList.add('flying-element');
-  flyingElement.style.width = `${rect.width}px`;
-  flyingElement.style.height = `${rect.height}px`;
-  flyingElement.style.left = `${rect.left}px`;
-  flyingElement.style.top = `${rect.top}px`;
-  flyingElement.style.margin = '0';
-  flyingElement.classList.remove('animate-in'); // 등장 애니메이션 제거
+    const flyingElement = cardElement.cloneNode(true);
+    flyingElement.classList.add('flying-element');
+    flyingElement.style.width = `${rect.width}px`;
+    flyingElement.style.height = `${rect.height}px`;
+    flyingElement.style.left = `${rect.left}px`;
+    flyingElement.style.top = `${rect.top}px`;
+    flyingElement.style.margin = '0';
+    flyingElement.classList.remove('animate-in'); // 등장 애니메이션 제거
 
-  document.body.appendChild(flyingElement);
+    document.body.appendChild(flyingElement);
 
-  // 애니메이션 실행
-  requestAnimationFrame(() => {
-    flyingElement.style.left = `${targetRect.left + 20}px`; // 타겟 위치로 이동
-    flyingElement.style.top = `${targetRect.top + targetRect.height / 2}px`; // 타겟 중앙쯤으로
-    flyingElement.style.transform = 'scale(0.2) opacity(0)';
-    flyingElement.style.opacity = '0';
-  });
+    // 애니메이션 실행
+    requestAnimationFrame(() => {
+        flyingElement.style.left = `${targetRect.left + 20}px`; // 타겟 위치로 이동
+        flyingElement.style.top = `${targetRect.top + targetRect.height / 2}px`; // 타겟 중앙쯤으로
+        flyingElement.style.transform = 'scale(0.2) opacity(0)';
+        flyingElement.style.opacity = '0';
+    });
 
-  // 2. 원본 카드는 선택 상태로 변경 (숨기지 않고 흐리게 처리 or 체크 표시)
-  // 기획 의도: "선택된 리스트 창으로 쑤욱 들어가서 선택 추천 창에는 없고"
-  // -> Slide Out 후 display: none
-  cardElement.style.transform = 'translateX(100px)';
-  cardElement.style.opacity = '0';
-  setTimeout(() => {
-    cardElement.style.display = 'none'; 
-    cardElement.classList.add('selected'); // 상태 마킹
-  }, 300);
+    // 2. 원본 카드는 선택 상태로 변경 (숨기지 않고 흐리게 처리 or 체크 표시)
+    // 기획 의도: "선택된 리스트 창으로 쑤욱 들어가서 선택 추천 창에는 없고"
+    // -> Slide Out 후 display: none
+    cardElement.style.transform = 'translateX(100px)';
+    cardElement.style.opacity = '0';
+    setTimeout(() => {
+        cardElement.style.display = 'none';
+        cardElement.classList.add('selected'); // 상태 마킹
+    }, 300);
 
-  // 3. 애니메이션 종료 후 실제 데이터 처리
-  setTimeout(() => {
-    flyingElement.remove();
-    selectPart(component);
-  }, 600);
+    // 3. 애니메이션 종료 후 실제 데이터 처리
+    setTimeout(() => {
+        flyingElement.remove();
+        selectPart(component);
+    }, 600);
 }
 
 /**
  * 부품 선택 및 상태 업데이트
  */
 function selectPart(component) {
-  // 같은 카테고리 부품이 이미 있으면 교체
-  const existingIndex = selectedParts.findIndex(p => p.category === component.category);
+    // 같은 카테고리 부품이 이미 있으면 교체
+    const existingIndex = selectedParts.findIndex(p => p.category === component.category);
 
-  if (existingIndex !== -1) {
-      // 기존 부품 교체
-    selectedParts[existingIndex] = component;
-  } else {
-    selectedParts.push(component);
-  }
+    if (existingIndex !== -1) {
+        // 기존 부품 교체
+        selectedParts[existingIndex] = component;
+    } else {
+        selectedParts.push(component);
+    }
 
-  updateSelectedParts();
-  saveState();
+    updateSelectedParts();
+    saveState();
 }
 
 /**
  * 선택된 부품 표시 업데이트 (파일 트리 스타일)
  */
 function updateSelectedParts() {
-  fileList.innerHTML = '';
+    fileList.innerHTML = '';
 
-  if (selectedParts.length === 0) {
-    fileList.innerHTML = '<div class="file-item" style="color: var(--color-text-muted); padding: 8px;">No parts selected</div>';
-    return;
-  }
+    if (selectedParts.length === 0) {
+        fileList.innerHTML = '<div class="file-item" style="color: var(--color-text-muted); padding: 8px;">No parts selected</div>';
+        return;
+    }
 
-  // 카테고리 순서대로 정렬
-  selectedParts.sort((a, b) => {
-    const idxA = CATEGORY_ORDER.findIndex(c => a.category.includes(c));
-    const idxB = CATEGORY_ORDER.findIndex(c => b.category.includes(c));
-    return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
-  });
+    // 카테고리 순서대로 정렬
+    selectedParts.sort((a, b) => {
+        const idxA = CATEGORY_ORDER.findIndex(c => a.category.includes(c));
+        const idxB = CATEGORY_ORDER.findIndex(c => b.category.includes(c));
+        return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+    });
 
-  selectedParts.forEach((component, index) => {
-    const item = createFileItem(component, index);
-    fileList.appendChild(item);
-  });
+    selectedParts.forEach((component, index) => {
+        const item = createFileItem(component, index);
+        fileList.appendChild(item);
+    });
 
-  // 총 가격 표시
-  const totalLine = document.createElement('div');
-  totalLine.className = 'file-item';
-  totalLine.style.borderTop = '1px solid var(--color-border)';
-  totalLine.style.marginTop = '8px';
-  totalLine.style.paddingTop = '8px';
-  totalLine.style.fontWeight = '700';
-  totalLine.innerHTML = `
+    // 총 가격 표시
+    const totalLine = document.createElement('div');
+    totalLine.className = 'file-item';
+    totalLine.style.borderTop = '1px solid var(--color-border)';
+    totalLine.style.marginTop = '8px';
+    totalLine.style.paddingTop = '8px';
+    totalLine.style.fontWeight = '700';
+    totalLine.innerHTML = `
     <span style="color: var(--color-success);">Total:</span>
     <span style="color: var(--color-link); margin-left: 8px;">${calculateTotal()}</span>
   `;
-  fileList.appendChild(totalLine);
+    fileList.appendChild(totalLine);
 }
 
 /**
  * 파일 아이템 생성 (파일 트리 스타일 - 원본 디자인)
  */
 function createFileItem(component, index) {
-  const item = document.createElement('div');
-  item.className = 'file-item';
-  item.style.display = 'flex';
-  item.style.alignItems = 'center';
-  item.style.justifyContent = 'space-between';
-  item.style.padding = '6px 8px';
-  item.dataset.index = index; 
+    const item = document.createElement('div');
+    item.className = 'file-item';
+    item.style.display = 'flex';
+    item.style.alignItems = 'center';
+    item.style.justifyContent = 'space-between';
+    item.style.padding = '6px 8px';
+    item.dataset.index = index;
 
-  const leftSection = document.createElement('div');
-  leftSection.style.flex = '1';
-  leftSection.style.overflow = 'hidden';
-  leftSection.style.display = 'flex';
-  leftSection.style.alignItems = 'center';
+    const leftSection = document.createElement('div');
+    leftSection.style.flex = '1';
+    leftSection.style.overflow = 'hidden';
+    leftSection.style.display = 'flex';
+    leftSection.style.alignItems = 'center';
 
-  const categorySpan = document.createElement('span');
-  categorySpan.style.color = 'var(--color-success)';
-  categorySpan.style.fontWeight = '500';
-  categorySpan.style.marginRight = '8px';
-  categorySpan.style.fontSize = '12px';
-  categorySpan.textContent = `[${component.category}]`;
+    const categorySpan = document.createElement('span');
+    categorySpan.style.color = 'var(--color-success)';
+    categorySpan.style.fontWeight = '500';
+    categorySpan.style.marginRight = '8px';
+    categorySpan.style.fontSize = '12px';
+    categorySpan.textContent = `[${component.category}]`;
 
-  const nameSpan = document.createElement('span');
-  nameSpan.style.color = 'var(--color-text-secondary)';
-  nameSpan.style.fontSize = '13px';
-  nameSpan.textContent = component.name;
-  nameSpan.style.whiteSpace = 'nowrap';
-  nameSpan.style.overflow = 'hidden';
-  nameSpan.style.textOverflow = 'ellipsis';
+    const nameSpan = document.createElement('span');
+    nameSpan.style.color = 'var(--color-text-secondary)';
+    nameSpan.style.fontSize = '13px';
+    nameSpan.textContent = component.name;
+    nameSpan.style.whiteSpace = 'nowrap';
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
 
-  leftSection.appendChild(categorySpan);
-  leftSection.appendChild(nameSpan);
+    leftSection.appendChild(categorySpan);
+    leftSection.appendChild(nameSpan);
 
-  const rightSection = document.createElement('div');
-  rightSection.style.display = 'flex';
-  rightSection.style.alignItems = 'center';
-  rightSection.style.gap = '8px';
+    const rightSection = document.createElement('div');
+    rightSection.style.display = 'flex';
+    rightSection.style.alignItems = 'center';
+    rightSection.style.gap = '8px';
 
-  const priceSpan = document.createElement('span');
-  priceSpan.style.color = 'var(--color-link)';
-  priceSpan.style.fontSize = 'var(--font-size-xs)';
-  priceSpan.textContent = component.price;
+    const priceSpan = document.createElement('span');
+    priceSpan.style.color = 'var(--color-link)';
+    priceSpan.style.fontSize = 'var(--font-size-xs)';
+    priceSpan.textContent = component.price;
 
-  const removeBtn = document.createElement('button');
-  removeBtn.style.padding = '2px 6px';
-  removeBtn.style.borderRadius = '4px';
-  removeBtn.style.background = 'transparent';
-  removeBtn.style.border = 'none';
-  removeBtn.style.color = 'var(--color-text-muted)';
-  removeBtn.style.cursor = 'pointer';
-  removeBtn.style.fontSize = '16px';
-  removeBtn.textContent = '×';
-  removeBtn.addEventListener('mouseenter', () => {
-    removeBtn.style.background = 'rgba(255, 255, 255, 0.1)';
-    removeBtn.style.color = 'var(--color-text-primary)';
-  });
-  removeBtn.addEventListener('mouseleave', () => {
+    const removeBtn = document.createElement('button');
+    removeBtn.style.padding = '2px 6px';
+    removeBtn.style.borderRadius = '4px';
     removeBtn.style.background = 'transparent';
+    removeBtn.style.border = 'none';
     removeBtn.style.color = 'var(--color-text-muted)';
-  });
-  
-  // 삭제 버튼 클릭 핸들러
-  removeBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    
-    item.classList.add('removing');
-    item.addEventListener('animationend', () => {
-      // 삭제 시 Panel 2에 해당 부품이 있다면 다시 보이게 처리
-      restoreRecommendationCard(component);
-      removePart(index);
-    }, { once: true });
-  });
+    removeBtn.style.cursor = 'pointer';
+    removeBtn.style.fontSize = '16px';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('mouseenter', () => {
+        removeBtn.style.background = 'rgba(255, 255, 255, 0.1)';
+        removeBtn.style.color = 'var(--color-text-primary)';
+    });
+    removeBtn.addEventListener('mouseleave', () => {
+        removeBtn.style.background = 'transparent';
+        removeBtn.style.color = 'var(--color-text-muted)';
+    });
 
-  rightSection.appendChild(priceSpan);
-  rightSection.appendChild(removeBtn);
+    // 삭제 버튼 클릭 핸들러
+    removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
 
-  item.appendChild(leftSection);
-  item.appendChild(rightSection);
+        item.classList.add('removing');
+        item.addEventListener('animationend', () => {
+            // 삭제 시 Panel 2에 해당 부품이 있다면 다시 보이게 처리
+            restoreRecommendationCard(component);
+            removePart(index);
+        }, { once: true });
+    });
 
-  return item;
+    rightSection.appendChild(priceSpan);
+    rightSection.appendChild(removeBtn);
+
+    item.appendChild(leftSection);
+    item.appendChild(rightSection);
+
+    return item;
 }
 
 /**
@@ -1116,7 +1324,7 @@ function restoreRecommendationCard(component) {
             card.style.opacity = '0';
             card.style.transform = 'translateX(0)';
             card.classList.remove('selected');
-            
+
             // 페이드 인
             requestAnimationFrame(() => {
                 card.style.opacity = '1';
@@ -1129,29 +1337,29 @@ function restoreRecommendationCard(component) {
  * 부품 제거
  */
 function removePart(index) {
-  selectedParts.splice(index, 1);
-  updateSelectedParts();
-  saveState();
+    selectedParts.splice(index, 1);
+    updateSelectedParts();
+    saveState();
 }
 
 /**
  * 총 가격 계산
  */
 function calculateTotal() {
-  const total = selectedParts.reduce((sum, part) => {
-    return sum + extractPrice(part.price);
-  }, 0);
+    const total = selectedParts.reduce((sum, part) => {
+        return sum + extractPrice(part.price);
+    }, 0);
 
-  return formatPrice(total);
+    return formatPrice(total);
 }
 
 /**
  * 전송 버튼 상태 업데이트
  */
 function updateSendButtonState() {
-  sendBtn.disabled = isLoading;
-  sendBtn.style.opacity = isLoading ? '0.5' : '1';
-  sendBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
+    sendBtn.disabled = isLoading;
+    sendBtn.style.opacity = isLoading ? '0.5' : '1';
+    sendBtn.style.cursor = isLoading ? 'not-allowed' : 'pointer';
 }
 
 /**
@@ -1211,15 +1419,15 @@ async function init3DViewer() {
         console.error('3D 뷰어 컨테이너를 찾을 수 없습니다');
         return;
     }
-    
+
     try {
         console.log('3D 뷰어 초기화 시작...');
         viewerState.container = container;
-        
+
         // 컨테이너 스크롤 방지
         container.style.overflow = 'hidden';
         container.style.position = 'relative';
-        
+
         // Scene 설정
         const scene = new THREE.Scene();
         viewerState.scene = scene;
@@ -1242,14 +1450,14 @@ async function init3DViewer() {
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        
+
         // 기존 캔버스 제거 후 추가 (재진입 안전장치)
         while (container.firstChild) {
             container.removeChild(container.firstChild);
         }
         container.appendChild(renderer.domElement);
         viewerState.renderer = renderer;
-        
+
         // Canvas 스타일 설정
         renderer.domElement.style.display = 'block';
         renderer.domElement.style.width = '100%';
@@ -1266,7 +1474,7 @@ async function init3DViewer() {
 
         // 컨트롤 설정 (이벤트 리스너)
         setupControls(renderer.domElement, controls);
-        
+
         // 조명 설정
         setupLights(scene);
 
@@ -1275,7 +1483,7 @@ async function init3DViewer() {
 
         // GLB 모델 로드
         const loader = new GLTFLoader();
-        
+
         console.log('GLB 파일 로드 시작: ./images/custom_gaming_pc.glb');
         loader.load(
             './images/custom_gaming_pc.glb',
@@ -1284,10 +1492,10 @@ async function init3DViewer() {
                 const model = gltf.scene;
                 scene.add(model);
                 viewerState.model = model;
-                
+
                 // 모델 크기 및 카메라 조정
                 fitCameraToModel(camera, controls, model);
-                
+
                 console.log('3D 모델 로드 및 설정 완료');
             },
             undefined,
@@ -1313,14 +1521,14 @@ async function init3DViewer() {
             if (!container || !camera || !renderer) return;
             const width = container.clientWidth;
             const height = container.clientHeight;
-            
+
             if (width > 0 && height > 0) {
                 camera.aspect = width / height;
                 camera.updateProjectionMatrix();
                 renderer.setSize(width, height);
             }
         };
-        
+
         if (typeof ResizeObserver !== 'undefined') {
             const resizeObserver = new ResizeObserver(handleResize);
             resizeObserver.observe(container);
@@ -1338,7 +1546,7 @@ async function init3DViewer() {
 // 컨트롤 이벤트 설정
 function setupControls(domElement, controls) {
     let isCtrlPressed = false;
-    
+
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) {
             isCtrlPressed = true;
@@ -1346,7 +1554,7 @@ function setupControls(domElement, controls) {
             controls.enablePan = true;
         }
     });
-    
+
     document.addEventListener('keyup', (e) => {
         if (!e.ctrlKey && !e.metaKey) {
             isCtrlPressed = false;
@@ -1361,24 +1569,24 @@ function fitCameraToModel(camera, controls, model) {
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
-    
+
     // 모델 스케일 조정 (약 3단위 크기로 맞춤)
     const targetSize = 3;
     const scale = targetSize / maxDim;
     model.scale.setScalar(scale);
-    
+
     // 스케일 적용 후 다시 박스 계산하여 중앙 정렬
     box.setFromObject(model);
     const center = box.getCenter(new THREE.Vector3());
     model.position.sub(center);
-    
+
     // 카메라 위치 설정
     camera.position.set(3, 3, 5);
     camera.lookAt(0, 0, 0);
-    
+
     controls.target.set(0, 0, 0);
     controls.update();
-    
+
     viewerState.initialCameraPosition = camera.position.clone();
     viewerState.initialCameraTarget = controls.target.clone();
 }
@@ -1415,10 +1623,10 @@ function setupLights(scene) {
 // 배경 설정 함수
 function setBackground(index) {
     if (!viewerState.scene) return;
-    
+
     viewerState.currentBackground = index;
     const option = BACKGROUND_OPTIONS[index];
-    
+
     if (option.type === 'color') {
         viewerState.scene.background = new THREE.Color(option.value);
         viewerState.scene.environment = null;
@@ -1516,7 +1724,7 @@ function create3DUI(container) {
 // 시점 최적화 함수
 function resetViewpoint() {
     if (!viewerState.camera || !viewerState.controls || !viewerState.model) return;
-    
+
     fitCameraToModel(viewerState.camera, viewerState.controls, viewerState.model);
 }
 

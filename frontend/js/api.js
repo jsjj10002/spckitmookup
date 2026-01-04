@@ -107,4 +107,134 @@ export function formatPrice(price) {
   return `${numeric.toLocaleString('ko-KR')}원`;
 }
 
+// =============================================================================
+// Step-by-Step API 함수
+// =============================================================================
+
+/**
+ * Step-by-Step 세션 시작
+ * @param {number} budget - 총 예산 (원)
+ * @param {string} purpose - 사용 목적 (gaming, workstation, general)
+ * @returns {Promise<Object>} 세션 정보 및 CPU 후보 목록
+ */
+export async function startStepSession(budget, purpose = 'general') {
+  const url = `${API_BASE_URL}/step/start`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: API_HEADERS,
+      body: JSON.stringify({ budget, purpose }),
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[API] Step 세션 시작 실패: ${response.status}`, text);
+      throw new Error('세션 시작에 실패했습니다.');
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('[API] Step 세션 시작 오류', error);
+    throw error;
+  }
+}
+
+/**
+ * 현재 단계의 후보 부품 조회
+ * @param {string} sessionId - 세션 ID
+ * @param {number} step - 단계 번호 (선택, 없으면 현재 단계)
+ * @param {number} topK - 조회할 후보 수 (기본 5)
+ * @returns {Promise<Object>} 후보 부품 목록
+ */
+export async function getStepCandidates(sessionId, step = null, topK = 5) {
+  let url = `${API_BASE_URL}/step/${sessionId}/candidates?top_k=${topK}`;
+  if (step !== null) {
+    url += `&step=${step}`;
+  }
+  
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: API_HEADERS,
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[API] 후보 조회 실패: ${response.status}`, text);
+      throw new Error('후보 조회에 실패했습니다.');
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('[API] 후보 조회 오류', error);
+    throw error;
+  }
+}
+
+/**
+ * 부품 선택 및 다음 단계로 진행
+ * @param {string} sessionId - 세션 ID
+ * @param {number} step - 현재 단계 번호
+ * @param {string} componentId - 선택한 부품 ID
+ * @param {Object} componentData - 부품 상세 정보 (선택)
+ * @returns {Promise<Object>} 다음 단계 정보 또는 완료 요약
+ */
+export async function selectComponent(sessionId, step, componentId, componentData = null) {
+  const url = `${API_BASE_URL}/step/${sessionId}/select`;
+  
+  const payload = {
+    step,
+    component_id: componentId,
+    component_data: componentData,
+  };
+  
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: API_HEADERS,
+      body: JSON.stringify(payload),
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[API] 부품 선택 실패: ${response.status}`, text);
+      throw new Error('부품 선택에 실패했습니다.');
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('[API] 부품 선택 오류', error);
+    throw error;
+  }
+}
+
+/**
+ * 세션 요약 조회 (현재까지 선택한 부품 목록 및 총 가격)
+ * @param {string} sessionId - 세션 ID
+ * @returns {Promise<Object>} 세션 요약
+ */
+export async function getSessionSummary(sessionId) {
+  const url = `${API_BASE_URL}/step/${sessionId}/summary`;
+  
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: API_HEADERS,
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error(`[API] 요약 조회 실패: ${response.status}`, text);
+      throw new Error('요약 조회에 실패했습니다.');
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('[API] 요약 조회 오류', error);
+    throw error;
+  }
+}
+
 export { API_BASE_URL };
+
