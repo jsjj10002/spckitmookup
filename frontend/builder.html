@@ -90,7 +90,7 @@
           <!-- 파일 트리 (선택된 부품 리스트) -->
           <div class="file-tree">
             <div class="file-tree-header">
-              <button class="tab active">Selected Parts</button>
+              <button class="tab active">AI 추천 부품</button>
             </div>
             <div class="file-list" id="file-list">
             </div>
@@ -102,22 +102,11 @@
               <!-- 탭 영역은 비워둠 -->
             </div>
             <div class="editor-content" id="editor-content">
+              <div class="selected-parts-panel" id="selected-parts-panel"></div>
             </div>
           </div>
         </div>
 
-        <!-- 하단 터미널 (부품 추천 리스트) -->
-        <div class="terminal-panel">
-          <!-- 로딩 오버레이 추가 -->
-          <div class="terminal-loading" id="terminal-loading" style="display: none;">
-            <div class="terminal-loading-content">
-              <div class="spinner-small"></div>
-              <span id="terminal-loading-text">Loading...</span>
-            </div>
-          </div>
-          <div class="terminal-content" id="terminal-content">
-          </div>
-        </div>
       </main>
     </div>
   </div>

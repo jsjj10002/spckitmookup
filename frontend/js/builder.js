@@ -9,7 +9,7 @@ import { getPCRecommendation, extractPrice, formatPrice } from './api.js';
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
-const terminalContent = document.getElementById('terminal-content'); // 선택된 부품 (넰미널)
+const selectedPartsContainer = document.getElementById('selected-parts-panel'); // 선택된 부품 (에디터 영역)
 const fileList = document.getElementById('file-list'); // 추천 부품 (파일 트리)
 const homeBtn = document.getElementById('home-btn');
 const startBuildBtn = document.getElementById('start-build-btn');
@@ -22,6 +22,20 @@ let selectedParts = [];
 let isLoading = false;
 let chatHistory = [];
 const CATEGORY_ORDER = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case', 'Cooler'];
+
+// 슬롯형 UI 표시용 카테고리 정의 (라벨 + 매칭 키워드)
+const CATEGORY_SLOTS = [
+  { label: 'CPU', match: ['cpu'] },
+  { label: '쿨러/튜닝', match: ['cooler', '튜닝', 'fan'] },
+  { label: '메인보드', match: ['mainboard', 'motherboard', '메인보드'] },
+  { label: '메모리', match: ['ram', 'memory', '메모리'] },
+  { label: '그래픽카드', match: ['gpu', 'graphics', '그래픽'] },
+  { label: 'SSD', match: ['ssd'] },
+  { label: 'HDD', match: ['hdd', 'hard'] },
+  { label: '케이스', match: ['case', '케이스'] },
+  { label: '파워', match: ['power', 'psu', '파워'] },
+  { label: '소프트웨어', match: ['software', 'os', '윈도우'] }
+];
 
 // 빌드 상태 관리
 let currentPhase = 'requirements'; // 'requirements' | 'building'
@@ -573,7 +587,7 @@ const COMPONENT_ICONS = {
  */
 function displayRecommendations(components) {
   // 로딩 중이 아닐 때만 내용 지우기 (중복 방지)
-  if (!terminalLoading.style.display || terminalLoading.style.display === 'none') {
+  if (!terminalLoading || !terminalLoading.style.display || terminalLoading.style.display === 'none') {
     fileList.innerHTML = '';
   }
 
@@ -665,31 +679,29 @@ function createRecommendationCard(component) {
           ${tagsHtml}
         </div>
       </div>
-      <div class="card-price">${component.price}</div>
-    </div>
-    <div class="card-actions">
-      <button class="info-btn" type="button" aria-label="성능 그래프 보기">
-        <span class="info-dot">i</span>
-        <span class="info-label">정보</span>
-      </button>
+      <div class="card-right">
+        <div class="card-price">${component.price}</div>
+        <button class="info-btn" type="button" aria-label="성능 그래프 보기">
+          <span class="info-dot">i</span>
+          <span class="info-label">담기</span>
+        </button>
+      </div>
     </div>
   `;
 
-  // 정보 아이콘 클릭 시 성능 그래프 패널 표시
+  // 담기 버튼 클릭 시 부품 선택 (애니메이션 포함)
   const infoBtn = card.querySelector('.info-btn');
   if (infoBtn) {
     infoBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      showPerformancePanel(component);
+      if (card.classList.contains('selected')) return;
+      handleCardClick(e, card, component);
     });
   }
 
-  // 클릭 이벤트 - 부품 선택
-  card.addEventListener('click', (e) => {
-    // 이미 선택된 경우 무시하거나 해제 로직을 넣을 수 있음
-    if (card.classList.contains('selected')) return;
-
-    handleCardClick(e, card, component);
+  // 추천 카드 클릭 시 성능 그래프 팝업 표시
+  card.addEventListener('click', () => {
+    showPerformancePanel(component);
   });
 
   return card;
@@ -699,10 +711,11 @@ function createRecommendationCard(component) {
  * 성능 그래프 패널 생성 (최초 1회)
  */
 function ensurePerformancePanel() {
-  const editorContent = document.querySelector('.editor-content');
-  if (!editorContent) return;
+  let overlay = document.getElementById('performance-overlay');
+  if (overlay) return overlay;
 
-  if (document.getElementById('performance-panel')) return;
+  overlay = document.createElement('div');
+  overlay.id = 'performance-overlay';
 
   const panel = document.createElement('div');
   panel.id = 'performance-panel';
@@ -718,21 +731,84 @@ function ensurePerformancePanel() {
     <div class="perf-body"></div>
   `;
 
-  panel.querySelector('.perf-close').addEventListener('click', () => {
+  const closePanel = () => {
+    overlay.classList.remove('visible');
     panel.classList.remove('visible');
+  };
+
+  panel.querySelector('.perf-close').addEventListener('click', closePanel);
+  panel.querySelector('.perf-close').addEventListener('mousedown', (event) => {
+    // 드래그 시작 방지 (닫기 버튼 클릭 시)
+    event.stopPropagation();
   });
 
-  editorContent.appendChild(panel);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closePanel();
+    }
+  });
+
+  panel.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
+  // 드래그 이동 처리
+  const dragState = {
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0
+  };
+
+  const perfHeader = panel.querySelector('.perf-header');
+  if (perfHeader) {
+    perfHeader.addEventListener('mousedown', (event) => {
+      dragState.dragging = true;
+      const rect = panel.getBoundingClientRect();
+
+      // 드래그 시작 시 현재 위치를 명시적으로 고정하고 transform 제거
+      panel.style.transform = 'none';
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      panel.style.position = 'absolute';
+
+      dragState.startX = event.clientX;
+      dragState.startY = event.clientY;
+      dragState.offsetX = rect.left;
+      dragState.offsetY = rect.top;
+
+      event.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (event) => {
+      if (!dragState.dragging) return;
+      const deltaX = event.clientX - dragState.startX;
+      const deltaY = event.clientY - dragState.startY;
+      panel.style.left = `${dragState.offsetX + deltaX}px`;
+      panel.style.top = `${dragState.offsetY + deltaY}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragState.dragging = false;
+    });
+  }
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  return overlay;
 }
 
 /**
  * 성능 그래프 패널 표시
  */
 function showPerformancePanel(component) {
-  ensurePerformancePanel();
-  const panel = document.getElementById('performance-panel');
+  const overlay = ensurePerformancePanel();
+  if (!overlay) return;
+  const panel = overlay.querySelector('#performance-panel');
   if (!panel) return;
 
+  overlay.classList.add('visible');
   panel.classList.add('visible');
   panel.querySelector('.perf-name').textContent = component.name;
   panel.querySelector('.perf-category').textContent = component.category;
@@ -1027,37 +1103,86 @@ function selectPart(component) {
  * 선택된 부품 표시 업데이트 (파일 트리 스타일)
  */
 function updateSelectedParts() {
-  terminalContent.innerHTML = '';
+  if (!selectedPartsContainer) return;
+  selectedPartsContainer.innerHTML = '';
 
-  if (selectedParts.length === 0) {
-    terminalContent.innerHTML = '<div class="terminal-line" style="color: var(--color-text-muted); padding: 8px;">No parts selected</div>';
-    return;
-  }
+  // 슬롯 컨테이너 생성
+  const slotsWrapper = document.createElement('div');
+  slotsWrapper.className = 'category-slots';
 
-  // 카테고리 순서대로 정렬
-  selectedParts.sort((a, b) => {
-    const idxA = CATEGORY_ORDER.findIndex(c => a.category.includes(c));
-    const idxB = CATEGORY_ORDER.findIndex(c => b.category.includes(c));
-    return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+  CATEGORY_SLOTS.forEach(slot => {
+    const slotEl = document.createElement('div');
+    slotEl.className = 'category-slot';
+
+    // 매칭되는 부품 찾기
+    const partIndex = selectedParts.findIndex(p => {
+      const cat = (p.category || '').toLowerCase();
+      return slot.match.some(keyword => cat.includes(keyword));
+    });
+    const part = partIndex >= 0 ? selectedParts[partIndex] : null;
+
+    if (part) {
+      slotEl.classList.add('filled');
+    } else {
+      slotEl.classList.add('empty');
+    }
+
+    const header = document.createElement('div');
+    header.className = 'slot-header';
+
+    const label = document.createElement('span');
+    label.className = 'slot-label';
+    label.textContent = slot.label;
+
+    header.appendChild(label);
+
+    if (part) {
+      const price = document.createElement('span');
+      price.className = 'slot-price';
+      price.textContent = part.price;
+      header.appendChild(price);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'slot-remove';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        restoreRecommendationCard(part);
+        removePart(partIndex);
+      });
+      header.appendChild(removeBtn);
+    }
+
+    const body = document.createElement('div');
+    body.className = 'slot-body';
+
+    if (part) {
+      const name = document.createElement('div');
+      name.className = 'slot-name';
+      name.textContent = part.name;
+      body.appendChild(name);
+    } else {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'slot-placeholder';
+      placeholder.textContent = '담기 버튼으로 선택하세요';
+      body.appendChild(placeholder);
+    }
+
+    slotEl.appendChild(header);
+    slotEl.appendChild(body);
+    slotsWrapper.appendChild(slotEl);
   });
 
-  selectedParts.forEach((component, index) => {
-    const item = createFileItem(component, index);
-    terminalContent.appendChild(item);
-  });
+  selectedPartsContainer.appendChild(slotsWrapper);
 
   // 총 가격 표시
   const totalLine = document.createElement('div');
-  totalLine.className = 'file-item';
-  totalLine.style.borderTop = '1px solid var(--color-border)';
-  totalLine.style.marginTop = '8px';
-  totalLine.style.paddingTop = '8px';
-  totalLine.style.fontWeight = '700';
+  totalLine.className = 'file-item total-line';
   totalLine.innerHTML = `
     <span style="color: var(--color-success);">Total:</span>
     <span style="color: var(--color-link); margin-left: 8px;">${calculateTotal()}</span>
   `;
-  terminalContent.appendChild(totalLine);
+  selectedPartsContainer.appendChild(totalLine);
 }
 
 /**
@@ -1089,9 +1214,13 @@ function createFileItem(component, index) {
   nameSpan.style.color = 'var(--color-text-secondary)';
   nameSpan.style.fontSize = '13px';
   nameSpan.textContent = component.name;
-  nameSpan.style.whiteSpace = 'nowrap';
+  nameSpan.style.whiteSpace = 'normal';
   nameSpan.style.overflow = 'hidden';
   nameSpan.style.textOverflow = 'ellipsis';
+  nameSpan.style.display = '-webkit-box';
+  nameSpan.style.webkitLineClamp = '2';
+  nameSpan.style.webkitBoxOrient = 'vertical';
+  nameSpan.style.lineHeight = '1.3';
 
   leftSection.appendChild(categorySpan);
   leftSection.appendChild(nameSpan);
