@@ -27,9 +27,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 소스 코드 및 데이터 복사
 COPY backend/ ./backend/
-# 로컬에 생성된 ChromaDB 데이터도 함께 복사 (데이터 유지)
-COPY backend/chroma_db/ ./backend/chroma_db/
-COPY .env .
+
 
 # 빌드된 프론트엔드 파일 복사
 COPY --from=frontend-builder /app/dist ./dist
