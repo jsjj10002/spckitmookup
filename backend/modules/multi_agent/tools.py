@@ -87,3 +87,59 @@ class CompatibilityCheckTool(BaseTool):
             return json.dumps(result_dict, ensure_ascii=False, indent=2)
         except Exception as e:
             return f"Error occurred during compatibility check: {str(e)}"
+
+class AutoStepBuilderToolInput(BaseModel):
+    """Input schema for AutoStepBuilderTool."""
+    budget: int = Field(..., description="Total budget for the PC build in KRW.")
+    purpose: str = Field(..., description="The main purpose of the PC (e.g., 'gaming', 'workstation', 'general').")
+
+class AutoStepBuilderTool(BaseTool):
+    name: str = "Auto PC Builder Tool (Step-by-Step)"
+    description: str = "Automatically builds a complete PC configuration by selecting compatible components step-by-step (CPU -> Mainboard -> RAM -> GPU -> ...) based on budget and purpose. Use this for full system recommendations."
+    args_schema: Type[BaseModel] = AutoStepBuilderToolInput
+    pipeline: Any = None  # StepByStepRAGPipeline
+
+    def __init__(self, pipeline: Any):
+        super().__init__()
+        self.pipeline = pipeline
+
+    def _run(self, budget: int, purpose: str) -> str:
+        if not self.pipeline:
+            return "Error: Step-by-Step Pipeline not initialized."
+        
+        try:
+            # 1. 세션 시작
+            session = self.pipeline.start_session(budget=budget, purpose=purpose)
+            session_id = session.session_id
+            
+            logs = []
+            logs.append(f"Session started: {session_id}")
+            
+            # 2. 1단계부터 8단계까지 순차 진행
+            for step in range(1, 9):
+                # 후보 조회
+                result = self.pipeline.get_step_candidates(session_id=session_id, step=step, top_k=1)
+                
+                if not result.candidates:
+                    logs.append(f"Step {step} ({result.category}): No candidates found.")
+                    break
+                
+                # 최적의 후보 선택 (첫 번째)
+                best_candidate = result.candidates[0]
+                
+                # 선택 실행
+                self.pipeline.select_component(
+                    session_id=session_id,
+                    step=step,
+                    component_id=best_candidate.component_id,
+                    component_data=best_candidate.dict() # assuming pydantic model
+                )
+                
+                logs.append(f"Step {step} ({result.category}): Selected {best_candidate.name} ({best_candidate.price:,} KRW)")
+            
+            # 3. 최종 요약 반환
+            summary = self.pipeline.get_summary(session_id)
+            return json.dumps(summary, ensure_ascii=False, indent=2)
+            
+        except Exception as e:
+            return f"Error during auto build: {str(e)}"

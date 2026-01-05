@@ -39,7 +39,7 @@ from crewai import Agent, Task, Crew, Process
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 도구 임포트
-from backend.modules.multi_agent.tools import SearchPartsTool, CompatibilityCheckTool
+from backend.modules.multi_agent.tools import SearchPartsTool, CompatibilityCheckTool, AutoStepBuilderTool
 from backend.rag.config import GENERATION_MODEL
 
 # ============================================================================
@@ -56,6 +56,7 @@ AGENT_CONFIGS = {
 고객이 "배그 풀옵 가능한 컴퓨터"라고 말하면, 이것이 최소 RTX 4060 이상의 
 그래픽카드와 충분한 RAM이 필요하다는 것을 즉시 파악합니다.
 모호한 요청도 명확한 스펙으로 변환하는 것이 당신의 특기입니다.
+하지만, 예산이나 주용도가 전혀 유추되지 않는 경우에는 억지로 값을 채우지 말고 missing_info 필드에 해당 항목을 명시해야 합니다.
 항상 한국어로 응답하며, 결과는 반드시 명확한 JSON 또는 구조화된 형식으로 도출해야 합니다.
         """,
     },
@@ -180,7 +181,7 @@ class ComponentSelectorAgent(Agent):
     """
     부품 선택 에이전트
     """
-    def __init__(self, retriever=None, llm=None, verbose: bool = True):
+    def __init__(self, retriever=None, step_pipeline=None, llm=None, verbose: bool = True):
         config = AGENT_CONFIGS["component_selector"]
         
         # 도구 설정
@@ -188,6 +189,10 @@ class ComponentSelectorAgent(Agent):
         if retriever:
             search_tool = SearchPartsTool(retriever=retriever)
             agent_tools.append(search_tool)
+        
+        if step_pipeline:
+            auto_tool = AutoStepBuilderTool(pipeline=step_pipeline)
+            agent_tools.append(auto_tool)
             
         super().__init__(
             role=config["role"],
