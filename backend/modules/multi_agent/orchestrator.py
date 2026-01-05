@@ -140,6 +140,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from backend.rag.vector_store import PCComponentVectorStore
 from backend.rag.retriever import PCComponentRetriever
+from backend.rag.step_by_step import StepByStepRAGPipeline
 from backend.modules.compatibility.engine import CompatibilityEngine
 # 에이전트 클래스는 _init_agents()에서 지연 import (테스트 mock 호환성)
 from backend.rag.config import GENERATION_MODEL
@@ -217,11 +218,26 @@ class AgentOrchestrator:
         self.verbose = verbose
         
         # LLM 초기화
-        self.llm = ChatGoogleGenerativeAI(
-            model=llm_model, 
-            temperature=temperature,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            logger.error("GOOGLE_API_KEY 또는 GEMINI_API_KEY가 설정되지 않았습니다.")
+        else:
+            # CrewAI/LangChain 내부에서 환경변수를 참조하는 경우가 있으므로 명시적 설정
+            os.environ["GOOGLE_API_KEY"] = api_key
+            # IMPORTANT: For CrewAI to pick up Gemini, we should use the string format "gemini/<model>"
+            # Passing the ChatGoogleGenerativeAI object directly is causing issues with create_llm in some versions.
+            
+        # self.llm을 객체가 아닌 문자열로 설정하여 CrewAI가 내부적으로 처리하게 함
+        # LangChain 객체가 필요할 경우를 대비해 별도로 유지할 수도 있지만, 
+        # 현재 에이전트들은 llm 인자로 전달받으므로 문자열을 넘기는 것이 안전함.
+        # 단, gemini/ 접두사가 필요함.
+        if not llm_model.startswith("gemini/"):
+            self.llm_model_str = f"gemini/{llm_model}"
+        else:
+            self.llm_model_str = llm_model
+            
+        # 호환성을 위해 self.llm도 이 문자열을 가리키도록 함 (CrewAI Agent는 문자열을 받으면 자동 초기화함)
+        self.llm = self.llm_model_str
 
         # 의존성 모듈 초기화
         # 1. RAG Retrieve (Vector Store -> Retriever)
@@ -230,6 +246,12 @@ class AgentOrchestrator:
 
         # 2. Compatibility Engine
         self.compatibility_engine = CompatibilityEngine()
+
+        # 3. Step-by-Step Pipeline (For Auto Builder Tool)
+        self.step_pipeline = StepByStepRAGPipeline(
+            retriever=self.retriever,
+            compatibility_engine=self.compatibility_engine
+        )
 
         # 에이전트 및 크루 초기화
         self._init_agents()
@@ -262,6 +284,7 @@ class AgentOrchestrator:
         
         self.component_selector = ComponentSelectorAgent(
             retriever=self.retriever,
+            step_pipeline=self.step_pipeline,
             llm=self.llm, 
             verbose=self.verbose
         )
@@ -283,9 +306,12 @@ class AgentOrchestrator:
         """
         # 1. 요구사항 분석 태스크
         task_analyze = Task(
-            description="사용자의 요청({query})을 분석하여 예산(budget), 주용도(purpose), 선호사항(preferences)을 명확하게 추출하세요. "
-                        "예산이 명시되지 않았다면 용도에 맞는 합리적인 예산을 추정하세요.",
-            expected_output="JSON 형식의 요구사항 명세서 (budget, purpose, preferences 필드 포함)",
+
+            description="사용자의 요청({query})을 정밀 분석하여 'budget'(예산), 'purpose'(주용도), 'preferences'(선호사항)을 추출하세요. "
+                        "중요: 예산이나 주용도가 명확하지 않거나 추정이 불가능할 경우, 억지로 추정하지 말고 "
+                        "반드시 'missing_info' 필드에 누락된 항목을 명시하여 반환하세요. "
+                        "예: {'budget': None, 'purpose': 'gaming', 'missing_info': ['budget']}",
+            expected_output="JSON 형식의 요구사항 명세서 (budget, purpose, references, missing_info 포함)",
             agent=self.requirement_analyzer
         )
 
@@ -297,11 +323,12 @@ class AgentOrchestrator:
             agent=self.budget_planner
         )
 
-        # 3. 부품 선택 태스크
+        # 3. 부품 선택 태스크 (업데이트됨)
         task_select = Task(
-            description="기획된 예산과 사용자의 요구사항을 바탕으로 'PC Component Search Tool'을 사용하여 실제 구매 가능한 최선의 부품들을 선정하세요. "
-                        "각 카테고리(CPU, GPU, Mainboard, RAM, SSD, Power, Case)별로 하나씩 선정해야 합니다. "
-                        "검색 결과가 없으면 유사한 가격대의 대안을 찾으세요.",
+            description="기획된 예산과 사용자의 요구사항을 바탕으로 부품을 선정하세요. "
+                        "전체 시스템 견적이 필요한 경우 반드시 'Auto PC Builder Tool (Step-by-Step)'을 사용하여 "
+                        "CPU부터 케이스까지 순차적으로 완벽하게 호환되는 시스템을 자동으로 구성하세요. "
+                        "개별 부품 검색이 필요한 경우에만 'PC Component Search Tool'을 사용하세요.",
             expected_output="선정된 부품들의 상세 목록 (제품명, 가격, 스펙 포함)과 선정 이유",
             agent=self.component_selector
         )
@@ -359,9 +386,53 @@ class AgentOrchestrator:
             }
             
             # CrewAI 실행
-            crew_output = self.crew.kickoff(inputs=inputs)
+            # 1. 요구사항 분석 실행
+            analysis_result = self.crew.agents[0].execute_task(
+                self.crew.tasks[0],
+                context=inputs, # Pass inputs as context for the first task
+                tools=[]
+            )
             
-            # 결과 파싱 및 반환
+            # 분석 결과 파싱 및 필수 정보 누락 확인
+            try:
+                # 문자열 형태의 리턴값을 JSON이나 Dict로 파싱 시도
+                import json
+                if isinstance(analysis_result, str):
+                    # JSON 블록 추출 시도 (```json ... ```)
+                    if "```json" in analysis_result:
+                        json_str = analysis_result.split("```json")[1].split("```")[0].strip()
+                        analysis_data = json.loads(json_str)
+                    elif "{" in analysis_result:
+                        analysis_data = json.loads(analysis_result)
+                    else:
+                        analysis_data = {}
+                else:
+                    analysis_data = analysis_result
+
+                # missing_info 확인
+                missing_info = analysis_data.get('missing_info', [])
+                if missing_info and len(missing_info) > 0:
+                    # 필수 정보 누락 시, 즉시 사용자에게 되묻는 응답 반환
+                    missing_str = ", ".join(missing_info)
+                    return RecommendationResult(
+                        status="missing_info", # Changed from "completed" to "missing_info"
+                        agent_logs=[f"견적을 정확하게 내기 위해 다음 정보가 필요합니다: {missing_str}. 예산이나 주용도를 알려주시면 맞춰서 추천해드릴게요!"],
+                        total_price=0,
+                        components=[], # Changed from "parts" to "components"
+                        compatibility_check={"missing_info": missing_info} # Using compatibility_check for metadata
+                    )
+
+            except Exception as e:
+                logger.warning(f"요구사항 분석 결과 파싱 실패: {e}. 진행합니다.")
+
+            # 정보가 충분하면 전체 크루 실행 (이미 첫 태스크는 실행했지만, Crew 구조상 전체 flow를 태우거나, 
+            # 아니면 여기서부터 이어서 실행해야 함. 
+            # CREWai의 kickoff는 전체를 다시 실행하므로, 효율성을 위해 inputs를 수정해서 재실행하거나 
+            # custom flow를 짜야 하지만, 여기서는 단순화를 위해 kickoff로 진행하되 
+            # 첫 에이전트가 캐싱된 결과를 쓰거나 다시 분석해도 무방함)
+            
+            # 2. 전체 프로세스 실행
+            crew_output = self.crew.kickoff(inputs=inputs)
             return self._parse_crew_output(str(crew_output))
 
         except Exception as e:

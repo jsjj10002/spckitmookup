@@ -9,17 +9,16 @@
     <script src="./js/landing.js" defer></script>
 </head>
 <body>
-    <!-- 헤더 (Figma 기준) -->
+    <!--
+    헤더 영역 비활성화
     <header class="header">
         <div class="header-container">
-            <!-- 로고: SVG 형식 사용 -->
             <div class="logo">
                 <a href="index.html">
                     <img src="images/spckit-logo.svg" alt="Spckit 로고" />
                 </a>
             </div>
 
-            <!-- 중앙 네비게이션 -->
             <nav class="nav-menu" aria-label="Primary">
                 <a href="https://discord.com/invite/stackblitz">Community</a>
                 <a href="https://bolt.new/enterprise">Enterprise</a>
@@ -28,20 +27,14 @@
                 <a href="https://bolt.new/pricing">Pricing</a>
             </nav>
 
-            <!-- 우측 액션: 공지, 소셜, 로그인, 시작하기 -->
             <div class="header-actions">
-                <!-- 공지 버튼 (간단한 링크 형태) -->
-
                 <div class="social-links">
-                    <!-- Discord 아이콘: Simple Icons CDN 사용 -->
                     <a href="https://discord.com/invite/stackblitz" class="social-icon" title="Discord" aria-label="Discord">
                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/discord.svg" alt="Discord" />
                     </a>
-                    <!-- X (Twitter) 아이콘: Simple Icons CDN 사용 -->
                     <a href="https://x.com/boltdotnew" class="social-icon" title="Twitter/X" aria-label="Twitter/X">
                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/x.svg" alt="X (Twitter)" />
                     </a>
-                    <!-- Reddit 아이콘: Simple Icons CDN 사용 -->
                     <a href="https://www.reddit.com/r/boltnewbuilders/" class="social-icon" title="Reddit" aria-label="Reddit">
                         <img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/reddit.svg" alt="Reddit" />
                     </a>
@@ -52,6 +45,11 @@
             </div>
         </div>
     </header>
+    -->
+
+    <div class="corner-logo">
+        <img src="images/spckit-logo.svg" alt="Spckit 로고" />
+    </div>
 
     <!-- 메인 콘텐츠 -->
     <div class="main-content">
@@ -60,8 +58,14 @@
         <!-- 배경 섹션 (채팅부터 푸터까지) -->
         <div class="background-section">
             <div class="main-background">
-                <!-- 배경 이미지: 원형 그라데이션 배경 (PNG 또는 SVG) -->
-                <img src="./images/round.png" alt="배경" class="main-bg-img" />
+                <!--<div class="background-content"></div>-->
+                <div class="background-extra">
+                    <div class="circle circle-1"></div>
+                    <div class="circle circle-2"></div>
+                    <div class="circle circle-3"></div>
+                    <div class="circle circle-4"></div>
+                    <div class="circle circle-5"></div>
+                </div>
             </div>
 
             <!-- 히어로 섹션 (background-section 내부로 통합되어 동일한 배경 사용) -->
@@ -97,10 +101,10 @@
                 <div class="chat-box">
                     <div class="chat-input-wrapper">
                         <div class="chat-input" id="landing-chat-input" contenteditable="true" placeholder="PC 부품 추천을 받으려면 메시지를 입력하세요..."></div>
-                        <button class="chat-send" id="landing-send-btn">Bulid Now</button>
+                        <button class="chat-send" id="landing-send-btn"><span class="chat-send__label">Bulid Now</span></button>
                     </div>
                     <div class="chat-footer">
-                        <span class="chat-info">100k tokens remaining.</span>
+                        <!--<span class="chat-info">100k tokens remaining.</span> # 100k tokens reamin>-->
                     </div>
                 </div>
             </div>
@@ -112,11 +116,11 @@
                     <div class="import-buttons">
                         <button class="import-btn" id="my-specs-btn">
                             <img src="./images/figma.png" alt="Figma">
-                            figma
+                            내 사양
                         </button>
                         <button class="import-btn">
-                            <img src="./images/github.png" alt="GitHub" class="icon-github">
-                            GitHub
+                            <img src="./images/star.png" alt="GitHub" class="icon-github">
+                            인기 빌드
                         </button>
                     </div>
                 </div>
@@ -138,19 +142,17 @@
 
         </div> <!-- closes background-section -->
 
-            <!-- 푸터 -->
+            <!--
+            푸터 영역 비활성화
             <footer class="footer" id="resources">
                 <div class="footer-container">
-                    <!-- 푸터 로고 -->
                     <div class="footer-logo">
                         <a href="index.html">
                             <img src="images/spckit-logo.svg" alt="Spckit.ai" />
                         </a>
                     </div>
 
-                    <!-- 푸터 링크 -->
                     <div class="footer-nav">
-                        <!-- 리소스 섹션 -->
                         <div class="footer-section">
                             <h4>Resources</h4>
                             <ul>
@@ -161,7 +163,6 @@
                             </ul>
                         </div>
 
-                        <!-- 회사 섹션 -->
                         <div class="footer-section">
                             <h4>Company</h4>
                             <ul>
@@ -171,7 +172,6 @@
                             </ul>
                         </div>
 
-                        <!-- 소셜 섹션 -->
                         <div class="footer-section">
                             <h4>Social</h4>
                             <ul>
@@ -186,11 +186,11 @@
                     </div>
                 </div>
 
-                <!-- 저작권 -->
                 <div class="footer-bottom">
                     <p>&copy; 2025 StackBlitz - All rights reserved.</p>
                 </div>
             </footer>
+            -->
     </div><!-- closes main-content -->
     </body>
 </html>

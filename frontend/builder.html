@@ -6,8 +6,6 @@
   <title>Spckit AI: PC Builder</title>
   <link rel="icon" type="image/svg+xml" href="./images/spckit-logo.svg">
   <link rel="stylesheet" href="./builder.css">
-  <!-- Chart.js 추가 -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script type="module" src="./js/builder.js" defer></script>
 </head>
 <body>
@@ -104,32 +102,12 @@
               <!-- 탭 영역은 비워둠 -->
             </div>
             <div class="editor-content" id="editor-content">
-              <div class="code-area" id="model-viewer">
-                <!-- 3D 모델 뷰어 영역 -->
-              </div>
             </div>
           </div>
         </div>
 
         <!-- 하단 터미널 (부품 추천 리스트) -->
         <div class="terminal-panel">
-          <div class="terminal-tabs">
-            <!-- Bolt 탭을 Next Step 버튼으로 변경 -->
-            <button class="terminal-tab active" id="next-step-btn">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18l6-6-6-6"/>
-              </svg>
-              Next Step
-            </button>
-            
-            <button class="terminal-tab">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 18l6-6-6-6"/>
-              </svg>
-              Details
-            </button>
-            <button class="terminal-action close">×</button>
-          </div>
           <!-- 로딩 오버레이 추가 -->
           <div class="terminal-loading" id="terminal-loading" style="display: none;">
             <div class="terminal-loading-content">
