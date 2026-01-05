@@ -1,13 +1,3 @@
-"""
-GNN 기반 추천 시스템 모듈 테스트
-================================
-
-테스트 실행:
-```bash
-pytest backend/tests/test_recommendation.py -v
-```
-"""
-
 import pytest
 import sys
 import os

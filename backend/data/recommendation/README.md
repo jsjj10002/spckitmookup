@@ -539,3 +539,27 @@ if __name__ == "__main__":
 - [ ] 그래프 생성 스크립트 실행
 - [ ] PyTorch Geometric 변환 테스트
 - [ ] GNN 모델 학습 테스트
+
+# GNN 추천 데이터 모듈
+
+> 원본 PC 부품 SQL 데이터를 GNN 학습용 그래프 구조로 정제하는 모듈입니다.
+
+## 📁 데이터 파일 설명
+
+1. **component_nodes.json**: SQL에서 추출된 약 13만 개의 부품 노드 정보 (이름, 브랜드, 가격 등).
+2. **compatibility_edges.json**: 소켓, 메모리 규격, 폼팩터에 따른 물리적 연결 데이터.
+3. **synergy_edges.json**: 브랜드 일치 등 추천 알고리즘의 가중치를 위한 심리적/성능적 연결 데이터.
+4. **attribute_mappings.json**: 부품-속성(LGA1700 등) 간의 매핑 정보.
+
+## 🛠️ 호환성 규칙 정의 (Implemented)
+- **Socket Match**: CPU와 메인보드의 소켓(LGA1700, AM5 등) 일치 여부 검증.
+- **DDR Type Match**: 메인보드와 메모리의 DDR 규격 일치 여부 검증.
+- **Form Factor Match**: 케이스와 메인보드의 크기(ATX, ITX 등) 호환성 검증.
+- **Same Brand Synergy**: 동일 브랜드 사용 시 시너지 가중치 부여.
+
+## 🚀 실행 가이드
+
+데이터를 최신화하려면 아래 명령어를 실행하십시오:
+
+```bash
+python backend/data/recommendation/build_graph.py
