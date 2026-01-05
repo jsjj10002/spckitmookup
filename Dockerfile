@@ -33,7 +33,7 @@ COPY backend/ ./backend/
 COPY --from=frontend-builder /app/dist ./dist
 
 # 포트 설정
-ENV PORT=8000
+ENV PORT=8080
 
 # 서버 실행
 CMD ["sh", "-c", "python -m uvicorn backend.api.main:app --host 0.0.0.0 --port $PORT"]
