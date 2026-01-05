@@ -154,8 +154,8 @@ class SelectionStep(int, Enum):
     GPU = 4
     STORAGE = 5
     PSU = 6
-    CASE = 7
-    CPU_COOLER = 8
+    CPU_COOLER = 7
+    CASE = 8
 
 
 # 단계별 카테고리 매핑

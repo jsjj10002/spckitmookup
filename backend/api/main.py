@@ -13,6 +13,7 @@ import os
 
 from rag.pipeline import RAGPipeline
 from rag.step_by_step import StepByStepRAGPipeline
+from modules.multi_agent.orchestrator import AgentOrchestrator, RecommendationResult
 
 # 로깅 설정
 logger.remove()
@@ -41,6 +42,7 @@ app.add_middleware(
 # RAG 파이프라인 전역 인스턴스
 pipeline: Optional[RAGPipeline] = None
 step_pipeline: Optional[StepByStepRAGPipeline] = None
+orchestrator: Optional[AgentOrchestrator] = None
 
 
 # Pydantic 모델 정의
@@ -77,11 +79,50 @@ class StepSelectRequest(BaseModel):
     component_data: Optional[Dict[str, Any]] = Field(None, description="부품 상세 정보")
 
 
+class AgentChatRequest(BaseModel):
+    query: str = Field(..., description="사용자 요청 메시지")
+    budget: Optional[int] = Field(None, description="예산 (원)")
+    purpose: Optional[str] = Field(None, description="주용도 (gaming, workstation, etc)")
+    preferences: Optional[Dict[str, Any]] = Field(default_factory=dict, description="추가 선호사항")
+
+
+# Step-by-Step 새 API 모델
+class StepRequest(BaseModel):
+    """단계별 부품 선택 요청"""
+    session_id: Optional[str] = Field(None, description="세션 ID (첫 호출 시 None)")
+    query: str = Field(..., description="초기 요구사항 또는 선택 의도")
+    current_step: int = Field(0, description="현재 단계 (0: 세션 시작, 1-8: 각 단계)", ge=0, le=8)
+    selected_component_id: Optional[str] = Field(None, description="이전 단계에서 선택한 부품 ID")
+    budget: Optional[int] = Field(None, description="예산 (원)")
+    purpose: Optional[str] = Field(None, description="목적 (gaming, workstation, etc)")
+
+
+class ComponentCandidate(BaseModel):
+    """부품 후보 정보"""
+    id: str
+    name: str
+    price: int
+    category: str
+    match_score: float
+    specs: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StepResponse(BaseModel):
+    """단계별 응답"""
+    session_id: str
+    step: int
+    step_name: str
+    candidates: List[ComponentCandidate]
+    analysis: str
+    is_final: bool
+    total_price: int = 0
+
+
 # 이벤트 핸들러
 @app.on_event("startup")
 async def startup_event():
     """앱 시작 시 RAG 파이프라인 초기화 및 벡터 DB 자동 초기화"""
-    global pipeline, step_pipeline
+    global pipeline, step_pipeline, orchestrator  # [수정] orchestrator 추가
     logger.info("=" * 60)
     logger.info("🚀 RAG 파이프라인 초기화 중...")
     logger.info("=" * 60)
@@ -142,6 +183,10 @@ async def startup_event():
             compatibility_engine=None  # 필요시 추가
         )
         logger.info("✅ Step-by-Step 파이프라인 초기화 완료!")
+
+        # 멀티 에이전트 오케스트레이터 초기화
+        orchestrator = AgentOrchestrator(verbose=True)
+        logger.info("🤖 멀티 에이전트 오케스트레이터 초기화 완료!")
         
         logger.info("=" * 60)
         
@@ -427,6 +472,181 @@ async def get_session_summary(session_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"요약 조회 실패: {str(e)}")
 
 
+# =============================================================================
+# Multi-Agent API 엔드포인트
+# =============================================================================
+
+@app.post("/agent/chat")
+async def agent_chat(request: AgentChatRequest) -> Dict[str, Any]:
+    """
+    멀티 에이전트와의 대화 (자동 PC 견적)
+    
+    사용자의 자연어 요청을 분석하여, Multi-Agent 시스템이 'Auto PC Builder Tool'을 통해
+    CPU부터 케이스까지 완벽한 호환성을 갖춘 PC를 자동으로 구성해줍니다.
+    """
+    if orchestrator is None:
+        logger.error("DEBUG: orchestrator is None in /agent/chat handler!")
+        raise HTTPException(status_code=503, detail="멀티 에이전트 시스템이 초기화되지 않았습니다.")
+    
+    try:
+        logger.info(f"에이전트 요청: {request.query}")
+        
+        # 오케스트레이터 실행
+        result = orchestrator.run({
+            "query": request.query,
+            "budget": request.budget,
+            "purpose": request.purpose,
+            "preferences": request.preferences
+        })
+        
+        return result.dict()
+        
+    except Exception as e:
+        logger.error(f"에이전트 실행 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"에이전트 실행 실패: {str(e)}")
+
+
+@app.post("/step/next", response_model=StepResponse)
+async def step_next(request: StepRequest):
+    """
+    단계별 부품 선택 (인터랙티브)
+    
+    - 세션 시작 (step=0): 초기 요구사항 분석 및 첫 번째 부품(CPU) 리스트 반환
+    - 부품 선택 (step=1-8): 선택된 부품을 저장하고 다음 단계 부품 리스트 반환
+    """
+    global step_pipeline
+    
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        import uuid
+        
+        # 세션 시작 (첫 호출 또는 new session)
+        if request.session_id is None or request.current_step == 0:
+            # 예산 및 목적 추출 (간단한 파싱)
+            budget = request.budget or 2000000  # 기본값 200만원
+            purpose = request.purpose or "general"
+            
+            # 세션 생성 (session_id는 자동 생성됨)
+            session = step_pipeline.start_session(
+                budget=budget,
+                purpose=purpose
+            )
+            
+            session_id = session.session_id
+            logger.info(f"새 세션 시작: {session_id}, 예산: {budget:,}원, 목적: {purpose}")
+            
+            # 첫 번째 단계 (CPU) 후보 조회
+            step_result = step_pipeline.get_step_candidates(session_id, step=1, top_k=5)
+            
+            # 응답 변환
+            candidates = [
+                ComponentCandidate(
+                    id=c.component_id,
+                    name=c.name,
+                    price=c.price,
+                    category=step_result.category,
+                    match_score=c.match_score,
+                    specs=c.specs
+                )
+                for c in step_result.candidates
+            ]
+            
+            return StepResponse(
+                session_id=session_id,
+                step=1,
+                step_name="CPU",
+                candidates=candidates,
+                analysis=f"{purpose} 용도에 적합한 CPU 후보입니다. 예산은 {budget:,}원입니다.",
+                is_final=False,
+                total_price=0
+            )
+        
+        # 부품 선택 및 다음 단계
+        else:
+            session_id = request.session_id
+            session = step_pipeline.get_session(session_id)
+            
+            if session is None:
+                raise HTTPException(status_code=404, detail=f"세션을 찾을 수 없습니다: {session_id}")
+            
+            # 이전 단계에서 선택한 부품 저장
+            if request.selected_component_id:
+                # 현재 단계 계산 (선택한 부품의 단계)
+                current_step_for_selection = session.current_step - 1 if session.current_step > 1 else 1
+                
+                # 선택한 부품 정보 조회 필요 (간단히 빈 데이터로 처리, 실제로는 DB에서 조회)
+                component_data = {"id": request.selected_component_id}
+                
+                step_pipeline.select_component(
+                    session_id=session_id,
+                    step=current_step_for_selection,
+                    component_id=request.selected_component_id,
+                    component_data=component_data
+                )
+                
+                logger.info(f"부품 선택: step={current_step_for_selection}, id={request.selected_component_id}")
+            
+            # 다음 단계 후보 조회
+            next_step = session.current_step
+            
+            if next_step > 8:
+                # 모든 단계 완료
+                total_price = sum(s.price for s in session.selections)
+                return StepResponse(
+                    session_id=session_id,
+                    step=8,
+                    step_name="완료",
+                    candidates=[],
+                    analysis="PC 구성이 완료되었습니다!",
+                    is_final=True,
+                    total_price=total_price
+                )
+            
+            step_result = step_pipeline.get_step_candidates(session_id, step=next_step, top_k=5)
+            
+            # 응답 변환
+            candidates = [
+                ComponentCandidate(
+                    id=c.component_id,
+                    name=c.name,
+                    price=c.price,
+                    category=step_result.category,
+                    match_score=c.match_score,
+                    specs=c.specs
+                )
+                for c in step_result.candidates
+            ]
+            
+            total_price = sum(s.price for s in session.selections)
+            step_name_map = {1: "CPU", 2: "메인보드", 3: "RAM", 4: "GPU", 5: "SSD", 6: "파워", 7: "쿨러", 8: "케이스"}
+            
+            return StepResponse(
+                session_id=session_id,
+                step=next_step,
+                step_name=step_name_map.get(next_step, "부품"),
+                candidates=candidates,
+                analysis=f"{step_result.category} 후보입니다. 현재까지 {total_price:,}원 사용했습니다.",
+                is_final=False,
+                total_price=total_price
+            )
+            
+    except Exception as e:
+        logger.error(f"Step 처리 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Step 처리 실패: {str(e)}")
+
+
+@app.get("/agent/status")
+async def agent_status():
+    """디버그용 orchestrator 상태 확인 엔드포인트"""
+    global orchestrator
+    return {
+        "status": "ok" if orchestrator else "error",
+        "orchestrator_initialized": orchestrator is not None
+    }
+
+
 # 개발 서버 실행 (직접 실행 시)
 if __name__ == "__main__":
     import uvicorn
@@ -446,6 +666,9 @@ if __name__ == "__main__":
 async def root():
     return {
         "service": "Spckit AI - PC 부품 추천 API",
+        "version": "2.0.0 (VERIFIED NEW VERSION)",
+        "status": "If you see this, Backend is updated",
+        "docs": "/docs",
         "version": "1.0.0",
         "docs": "/docs",
         "frontend": "npm run dev (port 3000)"

@@ -22,7 +22,8 @@ const API_HEADERS = {
 };
 
 async function fetchBackendRecommendation(payload) {
-  const url = `${API_BASE_URL}/query`;
+  // [수정] 멀티 에이전트 엔드포인트 사용
+  const url = `${API_BASE_URL}/agent/chat`;
 
   let response;
   try {
@@ -46,7 +47,7 @@ async function fetchBackendRecommendation(payload) {
 }
 
 /**
- * 사용자의 질문을 FastAPI `/query` 엔드포인트로 전달하고
+ * 사용자의 질문을 FastAPI `/agent/chat` 엔드포인트로 전달하고
  * 추천 결과를 반환합니다.
  */
 export async function getPCRecommendation(userMessage, options = {}) {
@@ -55,32 +56,34 @@ export async function getPCRecommendation(userMessage, options = {}) {
     throw new Error('질문을 입력해주세요.');
   }
 
-  const sanitizedTopK =
-    typeof options.top_k === 'number'
-      ? Math.max(1, Math.min(20, Math.floor(options.top_k)))
-      : 5;
-
+  // AgentChatRequest 형식에 맞춤
   const payload = {
     query,
-    top_k: sanitizedTopK,
-    category: options.category,
-    include_context: options.include_context ?? false,
+    // budget, purpose 등은 필요하다면 options에서 받아올 수 있음
+    // 현재는 Agent가 알아서 분석하도록 둠
+    preferences: options.preferences || {}
   };
 
   const data = await fetchBackendRecommendation(payload);
 
-  const recommendation = data?.recommendation ?? data;
-  if (!recommendation || typeof recommendation !== 'object') {
+  // [수정] RecommendationResult 형식 처리
+  // data 구조: { status, agent_logs, total_price, components, compatibility_check }
+
+  if (!data || typeof data !== 'object') {
     console.error('[API] 추천 응답이 유효하지 않습니다.', data);
     throw new Error('백엔드에서 추천 데이터를 받아올 수 없습니다.');
   }
 
-  if (!Array.isArray(recommendation.components)) {
-    console.warn('[API] 컴포넌트 리스트가 없습니다.', recommendation);
-    recommendation.components = [];
-  }
+  // agent_logs 배열을 합쳐서 하나의 분석 텍스트로 만듦
+  const analysisText = Array.isArray(data.agent_logs) ? data.agent_logs.join('\n\n') : '';
 
-  return recommendation;
+  return {
+    analysis: analysisText,
+    components: data.components || [],
+    total_price: data.total_price,
+    status: data.status,
+    compatibility: data.compatibility_check
+  };
 }
 
 /**
@@ -107,134 +110,47 @@ export function formatPrice(price) {
   return `${numeric.toLocaleString('ko-KR')}원`;
 }
 
-// =============================================================================
-// Step-by-Step API 함수
-// =============================================================================
-
 /**
- * Step-by-Step 세션 시작
- * @param {number} budget - 총 예산 (원)
- * @param {string} purpose - 사용 목적 (gaming, workstation, general)
- * @returns {Promise<Object>} 세션 정보 및 CPU 후보 목록
+ * 단계별 부품 후보 조회 (새로운 Step-by-Step API)
+ * @param {Object} stepRequest - { query, session_id, current_step, selected_component_id, budget, purpose }
+ * @returns {Promise<Object>} StepResponse
  */
-export async function startStepSession(budget, purpose = 'general') {
-  const url = `${API_BASE_URL}/step/start`;
-  
+export async function getStepCandidates(stepRequest) {
+  const url = `${API_BASE_URL}/step/next`;
+
   try {
     const response = await fetch(url, {
       method: 'POST',
       headers: API_HEADERS,
-      body: JSON.stringify({ budget, purpose }),
+      body: JSON.stringify(stepRequest),
     });
-    
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[API] Step 세션 시작 실패: ${response.status}`, text);
-      throw new Error('세션 시작에 실패했습니다.');
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('[API] Step 세션 시작 오류', error);
-    throw error;
-  }
-}
 
-/**
- * 현재 단계의 후보 부품 조회
- * @param {string} sessionId - 세션 ID
- * @param {number} step - 단계 번호 (선택, 없으면 현재 단계)
- * @param {number} topK - 조회할 후보 수 (기본 5)
- * @returns {Promise<Object>} 후보 부품 목록
- */
-export async function getStepCandidates(sessionId, step = null, topK = 5) {
-  let url = `${API_BASE_URL}/step/${sessionId}/candidates?top_k=${topK}`;
-  if (step !== null) {
-    url += `&step=${step}`;
-  }
-  
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: API_HEADERS,
-    });
-    
     if (!response.ok) {
       const text = await response.text();
-      console.error(`[API] 후보 조회 실패: ${response.status}`, text);
-      throw new Error('후보 조회에 실패했습니다.');
+      console.error(`[API] ${response.status} ${response.statusText}: ${text}`);
+      throw new Error('Step 후보 조회 실패');
     }
-    
-    return response.json();
+
+    return await response.json();
   } catch (error) {
-    console.error('[API] 후보 조회 오류', error);
+    console.error('[API] getStepCandidates 실패', error);
     throw error;
   }
 }
 
 /**
  * 부품 선택 및 다음 단계로 진행
- * @param {string} sessionId - 세션 ID
- * @param {number} step - 현재 단계 번호
- * @param {string} componentId - 선택한 부품 ID
- * @param {Object} componentData - 부품 상세 정보 (선택)
- * @returns {Promise<Object>} 다음 단계 정보 또는 완료 요약
+ * @param {string} sessionId 
+ * @param {string} componentId 
+ * @returns {Promise<Object>} StepResponse for next step
  */
-export async function selectComponent(sessionId, step, componentId, componentData = null) {
-  const url = `${API_BASE_URL}/step/${sessionId}/select`;
-  
-  const payload = {
-    step,
-    component_id: componentId,
-    component_data: componentData,
-  };
-  
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: API_HEADERS,
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[API] 부품 선택 실패: ${response.status}`, text);
-      throw new Error('부품 선택에 실패했습니다.');
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('[API] 부품 선택 오류', error);
-    throw error;
-  }
-}
-
-/**
- * 세션 요약 조회 (현재까지 선택한 부품 목록 및 총 가격)
- * @param {string} sessionId - 세션 ID
- * @returns {Promise<Object>} 세션 요약
- */
-export async function getSessionSummary(sessionId) {
-  const url = `${API_BASE_URL}/step/${sessionId}/summary`;
-  
-  try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: API_HEADERS,
-    });
-    
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[API] 요약 조회 실패: ${response.status}`, text);
-      throw new Error('요약 조회에 실패했습니다.');
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('[API] 요약 조회 오류', error);
-    throw error;
-  }
+export async function selectComponent(sessionId, componentId, currentStep) {
+  return getStepCandidates({
+    session_id: sessionId,
+    query: "다음 단계",
+    current_step: currentStep,
+    selected_component_id: componentId
+  });
 }
 
 export { API_BASE_URL };
-
