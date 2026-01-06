@@ -175,6 +175,7 @@ class RecommendationResult(BaseModel):
     compatibility_check: Dict[str, Any] = Field(default_factory=dict)
     performance_estimate: Dict[str, Any] = Field(default_factory=dict)
     agent_logs: List[str] = Field(default_factory=list)
+    extracted_requirements: Optional[Dict[str, Any]] = Field(default=None, description="추출된 요구사항(예산, 목적 등)")
 
 
 # ============================================================================
@@ -306,12 +307,11 @@ class AgentOrchestrator:
         """
         # 1. 요구사항 분석 태스크
         task_analyze = Task(
-
             description="사용자의 요청({query})을 정밀 분석하여 'budget'(예산), 'purpose'(주용도), 'preferences'(선호사항)을 추출하세요. "
-                        "중요: 예산이나 주용도가 명확하지 않거나 추정이 불가능할 경우, 억지로 추정하지 말고 "
-                        "반드시 'missing_info' 필드에 누락된 항목을 명시하여 반환하세요. "
-                        "예: {'budget': None, 'purpose': 'gaming', 'missing_info': ['budget']}",
-            expected_output="JSON 형식의 요구사항 명세서 (budget, purpose, references, missing_info 포함)",
+                        "또한 사용자와의 자연스러운 대화를 위한 'message' 필드를 반드시 생성하세요. "
+                        "정보가 부족하거나 비현실적인 요구사항인 경우 'missing_info' 리스트에 해당 사유를 명시하고, "
+                        "'message' 필드를 통해 정중하고 전문가다운 어조로 추가 질문이나 확인을 요청하세요.",
+            expected_output="JSON 형식의 요구사항 명세서 (budget, purpose, preferences, missing_info, message 포함)",
             agent=self.requirement_analyzer
         )
 
@@ -394,6 +394,7 @@ class AgentOrchestrator:
             )
             
             # 분석 결과 파싱 및 필수 정보 누락 확인
+            analysis_data = {}
             try:
                 # 문자열 형태의 리턴값을 JSON이나 Dict로 파싱 시도
                 import json
@@ -407,33 +408,72 @@ class AgentOrchestrator:
                     else:
                         analysis_data = {}
                 else:
-                    analysis_data = analysis_result
+                    analysis_data = analysis_result if isinstance(analysis_result, dict) else {}
 
-                # missing_info 확인
-                missing_info = analysis_data.get('missing_info', [])
-                if missing_info and len(missing_info) > 0:
+                # inputs 업데이트 (분석된 정보 반영)
+                if analysis_data.get("budget"): inputs["budget"] = analysis_data["budget"]
+                if analysis_data.get("purpose"): inputs["purpose"] = analysis_data["purpose"]
+                if analysis_data.get("preferences"): inputs["preferences"] = analysis_data["preferences"]
+
+                # missing_info 확인 (analysis_data와 실제 inputs 상태 모두 확인)
+                missing_info_from_agent = analysis_data.get('missing_info', [])
+                
+                # inputs 기준으로도 검증 (Agent가 분석을 완료했더라도 inputs에 반영이 안 됐을 수 있음)
+                actual_missing = []
+                if not inputs.get('budget'): actual_missing.append('budget')
+                if not inputs.get('purpose'): actual_missing.append('purpose')
+                
+                # 두 기준을 합쳐서 판단
+                # Agent가 "budget이 없다"고 했거나, 실제로 inputs에 budget이 없으면 missing으로 간주
+                final_missing = list(set(missing_info_from_agent + actual_missing))
+
+                if final_missing:
                     # 필수 정보 누락 시, 즉시 사용자에게 되묻는 응답 반환
-                    missing_str = ", ".join(missing_info)
+                    # 필수 정보 누락 시, 즉시 사용자에게 되묻는 응답 반환
+                    # 1. Agent가 생성한 메시지가 있으면 우선 사용
+                    question = analysis_data.get("message")
+                    
+                    if not question:
+                        # 2. 메시지가 없으면 기본 질문 생성 (Fallback)
+                        question = "예산과 주용도를 알려주시면 딱 맞는 PC를 추천해드릴 수 있어요!"
+                        if "budget" in final_missing and "purpose" in final_missing:
+                             question = "생각해두신 예산과 주용도(게임, 작업 등)를 알려주세요. (예: 150만원 게임용)"
+                        elif "budget" in final_missing:
+                             question = "예산은 어느 정도로 생각하시나요?"
+                        elif "purpose" in final_missing:
+                             question = "PC를 주로 어떤 용도로 사용하시나요? (예: 게임, 영상편집, 사무용)"
+                    
                     return RecommendationResult(
-                        status="missing_info", # Changed from "completed" to "missing_info"
-                        agent_logs=[f"견적을 정확하게 내기 위해 다음 정보가 필요합니다: {missing_str}. 예산이나 주용도를 알려주시면 맞춰서 추천해드릴게요!"],
+                        status="missing_info",
+                        agent_logs=[question],
                         total_price=0,
-                        components=[], # Changed from "parts" to "components"
-                        compatibility_check={"missing_info": missing_info} # Using compatibility_check for metadata
+                        components=[],
+                        compatibility_check={"missing_info": final_missing},
+                        extracted_requirements=analysis_data
                     )
 
             except Exception as e:
                 logger.warning(f"요구사항 분석 결과 파싱 실패: {e}. 진행합니다.")
 
-            # 정보가 충분하면 전체 크루 실행 (이미 첫 태스크는 실행했지만, Crew 구조상 전체 flow를 태우거나, 
-            # 아니면 여기서부터 이어서 실행해야 함. 
-            # CREWai의 kickoff는 전체를 다시 실행하므로, 효율성을 위해 inputs를 수정해서 재실행하거나 
-            # custom flow를 짜야 하지만, 여기서는 단순화를 위해 kickoff로 진행하되 
-            # 첫 에이전트가 캐싱된 결과를 쓰거나 다시 분석해도 무방함)
+            # 2. 필수 정보 수집 완료: 전체 프로세스를 돌리지 않고 '성공' 반환하여 Step-by-Step 모드 진입 유도
+            # (사용자 요청: "CPU만 우르르 찾아야 하는거야... 메인보드 우르르...")
             
-            # 2. 전체 프로세스 실행
-            crew_output = self.crew.kickoff(inputs=inputs)
-            return self._parse_crew_output(str(crew_output))
+            success_msg = f"예산 {inputs.get('budget', '미정')}, 용도 {inputs.get('purpose', '미정')}로 확인되었습니다. 부품 선택을 시작합니다."
+            
+            return RecommendationResult(
+                status="success",
+                agent_logs=[success_msg],
+                total_price=0,
+                components=[], # 부품 목록은 비워둠 (Frontend가 Step API로 CPU부터 조회함)
+                compatibility_check={"message": "Requirement Analysis Completed"},
+                extracted_requirements=analysis_data or inputs # 분석 데이터 또는 현재 입력값 반환
+            )
+            
+            # Legacy: 전체 자동 견적 생성 (현재 비활성화)
+            # crew_output = self.crew.kickoff(inputs=inputs)
+            # final_result = self._parse_crew_output(str(crew_output))
+            # final_result.extracted_requirements = analysis_data 
+            # return final_result
 
         except Exception as e:
             logger.error(f"파이프라인 실행 중 오류 발생: {e}")

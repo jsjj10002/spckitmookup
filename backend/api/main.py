@@ -12,8 +12,9 @@ import sys
 import os
 
 from rag.pipeline import RAGPipeline
-from rag.step_by_step import StepByStepRAGPipeline
+from rag.step_by_step import StepByStepRAGPipeline, CATEGORY_INFO
 from modules.multi_agent.orchestrator import AgentOrchestrator, RecommendationResult
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 로깅 설정
 logger.remove()
@@ -105,6 +106,9 @@ class ComponentCandidate(BaseModel):
     category: str
     match_score: float
     specs: Dict[str, Any] = Field(default_factory=dict)
+    hashtags: List[str] = Field(default_factory=list)
+    representative_specs: Dict[str, Any] = Field(default_factory=dict)
+    compatibility_status: str = Field("compatible", description="compatible, warning, incompatible")
 
 
 class StepResponse(BaseModel):
@@ -116,6 +120,8 @@ class StepResponse(BaseModel):
     analysis: str
     is_final: bool
     total_price: int = 0
+    category_description: Optional[str] = None
+    spec_meanings: Optional[Dict[str, str]] = None
 
 
 # 이벤트 핸들러
@@ -177,10 +183,21 @@ async def startup_event():
             logger.success(f"✅ RAG 파이프라인 초기화 완료!")
             logger.info(f"📊 벡터 DB 문서 수: {doc_count}개")
         
+        # LLM 모델 초기화
+        llm_api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        llm = None
+        if llm_api_key:
+            llm = ChatGoogleGenerativeAI(
+                model=os.getenv("GENERATION_MODEL", "gemini-1.5-flash"),
+                temperature=0.7,
+                google_api_key=llm_api_key
+            )
+
         # Step-by-Step 파이프라인 초기화
         step_pipeline = StepByStepRAGPipeline(
             retriever=pipeline.retriever,
-            compatibility_engine=None  # 필요시 추가
+            compatibility_engine=None,
+            llm=llm
         )
         logger.info("✅ Step-by-Step 파이프라인 초기화 완료!")
 
@@ -379,10 +396,17 @@ async def get_step_candidates(
             top_k=top_k
         )
         
+        # 카테고리 정보 추가
+        category_info = CATEGORY_INFO.get(result.category, {})
+        
         return {
             "session_id": result.session_id,
             "step": result.step,
             "category": result.category,
+            "category_name": category_info.get("name", result.category),
+            "category_description": category_info.get("description", ""),
+            "key_specs": category_info.get("key_specs", []),
+            "spec_meanings": category_info.get("spec_meanings", {}),
             "candidates": [c.model_dump() for c in result.candidates],
             "allocated_budget": result.allocated_budget,
             "remaining_budget": result.remaining_budget,
@@ -425,11 +449,18 @@ async def select_component(
                 step=session.current_step
             )
             
+            # 카테고리 정보 추가
+            category_info = CATEGORY_INFO.get(next_result.category, {})
+            
             return {
                 "session_id": session_id,
                 "selected_step": request.step,
                 "next_step": session.current_step,
                 "category": next_result.category,
+                "category_name": category_info.get("name", next_result.category),
+                "category_description": category_info.get("description", ""),
+                "key_specs": category_info.get("key_specs", []),
+                "spec_meanings": category_info.get("spec_meanings", {}),
                 "candidates": [c.model_dump() for c in next_result.candidates],
                 "allocated_budget": next_result.allocated_budget,
                 "remaining_budget": next_result.remaining_budget,
@@ -524,8 +555,11 @@ async def step_next(request: StepRequest):
         
         # 세션 시작 (첫 호출 또는 new session)
         if request.session_id is None or request.current_step == 0:
-            # 예산 및 목적 추출 (간단한 파싱)
-            budget = request.budget or 2000000  # 기본값 200만원
+            # 예산 필수 체크 (기본값 제거)
+            if not request.budget:
+                raise HTTPException(status_code=400, detail="예산 정보가 필요합니다.")
+                
+            budget = request.budget
             purpose = request.purpose or "general"
             
             # 세션 생성 (session_id는 자동 생성됨)
@@ -548,19 +582,33 @@ async def step_next(request: StepRequest):
                     price=c.price,
                     category=step_result.category,
                     match_score=c.match_score,
-                    specs=c.specs
+                    specs=c.specs,
+                    hashtags=getattr(c, "hashtags", []),
+                    representative_specs=getattr(c, "representative_specs", {}),
+                    compatibility_status=getattr(c, "compatibility_status", "compatible")
                 )
                 for c in step_result.candidates
             ]
+            
+            purpose_kr = {"general": "일반/가정", "gaming": "게이밍", "workstation": "작업", "streaming": "방송"}.get(purpose, purpose)
+
+            
+            analysis_msg = step_result.analysis if hasattr(step_result, "analysis") and step_result.analysis else f"{purpose_kr} 용도에 적합한 CPU 후보입니다. 예산은 {budget:,}원입니다."
+
+            # 카테고리 정보 가져오기 (step_result.category는 "CPU" 등)
+            cat_name = step_result.category
+            cat_info = CATEGORY_INFO.get(cat_name, {})
             
             return StepResponse(
                 session_id=session_id,
                 step=1,
                 step_name="CPU",
                 candidates=candidates,
-                analysis=f"{purpose} 용도에 적합한 CPU 후보입니다. 예산은 {budget:,}원입니다.",
+                analysis=analysis_msg,
                 is_final=False,
-                total_price=0
+                total_price=0,
+                category_description=cat_info.get("description", ""),
+                spec_meanings=cat_info.get("spec_meanings", {})
             )
         
         # 부품 선택 및 다음 단계
@@ -573,8 +621,8 @@ async def step_next(request: StepRequest):
             
             # 이전 단계에서 선택한 부품 저장
             if request.selected_component_id:
-                # 현재 단계 계산 (선택한 부품의 단계)
-                current_step_for_selection = session.current_step - 1 if session.current_step > 1 else 1
+                # [Fix] Use request.current_step directly as the selection step
+                current_step_for_selection = request.current_step if request.current_step >= 1 else session.current_step
                 
                 # 선택한 부품 정보 조회 필요 (간단히 빈 데이터로 처리, 실제로는 DB에서 조회)
                 component_data = {"id": request.selected_component_id}
@@ -588,7 +636,8 @@ async def step_next(request: StepRequest):
                 
                 logger.info(f"부품 선택: step={current_step_for_selection}, id={request.selected_component_id}")
             
-            # 다음 단계 후보 조회
+            # [Fix] Re-fetch session after selection to get updated current_step
+            session = step_pipeline.get_session(session_id)
             next_step = session.current_step
             
             if next_step > 8:
@@ -614,22 +663,33 @@ async def step_next(request: StepRequest):
                     price=c.price,
                     category=step_result.category,
                     match_score=c.match_score,
-                    specs=c.specs
+                    specs=c.specs,
+                    hashtags=getattr(c, "hashtags", []),
+                    representative_specs=getattr(c, "representative_specs", {}),
+                    compatibility_status=getattr(c, "compatibility_status", "compatible")
                 )
                 for c in step_result.candidates
             ]
             
             total_price = sum(s.price for s in session.selections)
             step_name_map = {1: "CPU", 2: "메인보드", 3: "RAM", 4: "GPU", 5: "SSD", 6: "파워", 7: "쿨러", 8: "케이스"}
+            next_step_name = step_name_map.get(next_step, "부품")
             
+            analysis_msg = step_result.analysis if hasattr(step_result, "analysis") and step_result.analysis else f"{step_result.category} 후보입니다. 현재까지 {total_price:,}원 사용했습니다."
+            
+            cat_name = step_result.category
+            cat_info = CATEGORY_INFO.get(cat_name, {})
+
             return StepResponse(
                 session_id=session_id,
                 step=next_step,
-                step_name=step_name_map.get(next_step, "부품"),
+                step_name=next_step_name,
                 candidates=candidates,
-                analysis=f"{step_result.category} 후보입니다. 현재까지 {total_price:,}원 사용했습니다.",
+                analysis=analysis_msg,
                 is_final=False,
-                total_price=total_price
+                total_price=total_price,
+                category_description=cat_info.get("description", ""),
+                spec_meanings=cat_info.get("spec_meanings", {})
             )
             
     except Exception as e:

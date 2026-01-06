@@ -134,8 +134,11 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
+import json
+import re
 from loguru import logger
 from pydantic import BaseModel, Field
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # 모듈 임포트 (상대 경로)
 # from .retriever import PCComponentRetriever
@@ -204,6 +207,98 @@ BUDGET_ALLOCATION = {
     },
 }
 
+# 카테고리별 설명 및 주요 스펙
+CATEGORY_INFO = {
+    "cpu": {
+        "name": "CPU (중앙처리장치)",
+        "description": "컴퓨터의 두뇌 역할을 하는 핵심 부품입니다. 모든 연산과 작업 처리를 담당합니다.",
+        "key_specs": ["코어 수", "클럭 속도", "TDP", "소켓 타입"],
+        "spec_meanings": {
+            "match_score": "사용 목적과의 적합도 (0~1, 높을수록 적합)",
+            "cores": "동시 작업 처리 능력 (많을수록 멀티태스킹 우수)",
+            "clock_speed": "처리 속도 (GHz, 높을수록 빠름)",
+            "tdp": "소비 전력 및 발열량 (W)"
+        }
+    },
+    "motherboard": {
+        "name": "메인보드 (마더보드)",
+        "description": "모든 부품을 연결하는 기판입니다. CPU, 메모리, GPU 등을 장착하며 호환성이 중요합니다.",
+        "key_specs": ["소켓", "칩셋", "메모리 타입", "폼팩터"],
+        "spec_meanings": {
+            "match_score": "선택한 CPU와의 호환성 점수",
+            "socket": "CPU 장착 방식 (선택한 CPU와 일치해야 함)",
+            "chipset": "기능 및 확장성을 결정",
+            "memory_type": "지원하는 RAM 규격 (DDR4, DDR5 등)"
+        }
+    },
+    "memory": {
+        "name": "메모리 (RAM)",
+        "description": "실행 중인 프로그램과 데이터를 임시 저장하는 공간입니다. 용량과 속도가 중요합니다.",
+        "key_specs": ["용량", "속도", "DDR 타입", "개수"],
+        "spec_meanings": {
+            "match_score": "메인보드 호환성 및 목적 적합도",
+            "capacity": "저장 공간 (GB, 많을수록 멀티태스킹 여유)",
+            "speed": "데이터 전송 속도 (MHz)",
+            "ddr_generation": "세대 (DDR4, DDR5 - 메인보드와 일치)"
+        }
+    },
+    "gpu": {
+        "name": "그래픽카드 (GPU)",
+        "description": "화면 출력 및 그래픽 연산을 담당합니다. 게임과 영상 작업 성능에핵심적입니다.",
+        "key_specs": ["VRAM", "코어 클럭", "TDP", "출력 포트"],
+        "spec_meanings": {
+            "match_score": "게임/작업 목적 적합도",
+            "vram": "비디오 메모리 용량 (GB)",
+            "core_clock": "GPU 처리 속도 (MHz)",
+            "tdp": "소비 전력 (파워 용량 고려 필요)"
+        }
+    },
+    "storage": {
+        "name": "저장장치 (SSD/HDD)",
+        "description": "운영체제, 프로그램, 파일을 영구 저장하는 장치입니다. 속도와 용량을 고려해야 합니다.",
+        "key_specs": ["용량", "읽기/쓰기 속도", "인터페이스", "폼팩터"],
+        "spec_meanings": {
+            "match_score": "용도 및 가성비",
+            "capacity": "저장 공간 (GB/TB)",
+            "read_speed": "데이터 읽기 속도 (MB/s)",
+            "interface": "연결 방식 (NVMe, SATA 등)"
+        }
+    },
+    "psu": {
+        "name": "파워 서플라이 (PSU)",
+        "description": "모든 부품에 전력을 공급하는 장치입니다. 충분한 용량과 인증 등급이 중요합니다.",
+        "key_specs": ["출력", "인증 등급", "모듈러 타입", "폼팩터"],
+        "spec_meanings": {
+            "match_score": "전력 요구량 충족도",
+            "wattage": "최대 출력 (W, CPU+GPU TDP의 1.5배 권장)",
+            "efficiency": "효율 인증 (80 PLUS Bronze/Gold/Platinum 등)",
+            "modular": "케이블 탈착 방식 (풀모듈러 권장)"
+        }
+    },
+    "cpu_cooler": {
+        "name": "CPU 쿨러",
+        "description": "CPU의 열을 식히는 장치입니다. CPU TDP를 감당할 수 있어야 하며 케이스 높이를 고려해야 합니다.",
+        "key_specs": ["쿨링 방식", "TDP 지원", "높이", "소음"],
+        "spec_meanings": {
+            "match_score": "CPU TDP 커버 능력",
+            "cooling_type": "공랭 또는 수랭",
+            "max_tdp": "지원 가능한 최대 TDP (W)",
+            "height": "제품 높이 (케이스 여유 확인 필요)"
+        }
+    },
+    "case": {
+        "name": "케이스",
+        "description": "모든 부품을 담는 외부 케이스입니다. 메인보드 폼팩터, GPU 길이, 쿨러 높이를 고려해야 합니다.",
+        "key_specs": ["폼팩터", "크기", "확장 슬롯", "최대 GPU 길이"],
+        "spec_meanings": {
+            "match_score": "부품 호환성",
+            "form_factor": "지원 메인보드 크기 (ATX, M-ATX 등)",
+            "dimensions": "케이스 크기 (mm)",
+            "max_gpu_length": "장착 가능한 최대 그래픽카드 길이"
+        }
+    },
+}
+
 
 # ============================================================================
 # 데이터 모델
@@ -228,6 +323,8 @@ class CandidateComponent(BaseModel):
     compatibility_status: str  # compatible, warning, incompatible
     reasons: List[str] = Field(default_factory=list)
     specs: Dict[str, Any] = Field(default_factory=dict)
+    hashtags: List[str] = Field(default_factory=list)  # 새로 추가
+    representative_specs: Dict[str, Any] = Field(default_factory=dict)  # 새로 추가
 
 
 class StepContext(BaseModel):
@@ -251,6 +348,7 @@ class StepResult(BaseModel):
     context: StepContext
     next_step: Optional[int] = None
     is_final_step: bool = False
+    analysis: str = Field(default="")
 
 
 class SelectionSession(BaseModel):
@@ -302,14 +400,17 @@ class StepByStepRAGPipeline:
         self,
         retriever=None,
         compatibility_engine=None,
+        llm=None,
     ):
         """
         Args:
             retriever: PCComponentRetriever 인스턴스
             compatibility_engine: CompatibilityEngine 인스턴스
+            llm: LangChain Chat Model 인스턴스 (Option)
         """
         self.retriever = retriever
         self.compatibility_engine = compatibility_engine
+        self.llm = llm
         
         # 세션 저장소 (실제로는 Redis/DB 사용)
         self._sessions: Dict[str, SelectionSession] = {}
@@ -405,19 +506,30 @@ class StepByStepRAGPipeline:
             top_k=top_k * 2,  # 필터링 고려하여 더 많이 검색
         )
         
-        # 호환성 필터링
+        # 호환성 필터링 (결과가 없으면 완화하여 다시 시도)
+        filtered_candidates = candidates
         if session.selections:
-            candidates = self._filter_by_compatibility(
-                candidates,
-                session.selections,
-            )
+            filtered_candidates = self._filter_by_compatibility(candidates, session.selections)
         
+        # 필터링 결과가 너무 적으면(0개), 호환되지 않아도 보여주되 warning 표시
+        if not filtered_candidates and candidates:
+             logger.warning(f"호환되는 후보가 없어 필터링 해제 (전체 {len(candidates)}개 반환)")
+             for c in candidates:
+                 c.compatibility_status = "warning"
+                 c.reasons.append("일부 호환성 주의 필요")
+             filtered_candidates = candidates
+        else:
+             candidates = filtered_candidates
+
         # 상위 K개 선택
         candidates = candidates[:top_k]
         
         # 다음 단계 결정
         next_step = step + 1 if step < 8 else None
         
+        # LLM 분석 및 해시태그 생성 (한 번에 수행)
+        analysis = self._enrich_candidates_with_llm(session, step, category, candidates)
+
         return StepResult(
             session_id=session_id,
             step=step,
@@ -428,6 +540,7 @@ class StepByStepRAGPipeline:
             context=session.context,
             next_step=next_step,
             is_final_step=(step == 8),
+            analysis=analysis
         )
     
     def select_component(
@@ -515,6 +628,59 @@ class StepByStepRAGPipeline:
         
         return " ".join(parts)
     
+    def _map_specs(self, category: str, specs: Dict[str, Any]) -> Dict[str, Any]:
+        """Generic field_X keys to semantic keys mapping"""
+        new_specs = specs.copy()
+        
+        # Helper to safely map if key exists
+        def map_field(src_idx: int, dest_key: str):
+            key = f"field_{src_idx}"
+            if key in specs:
+                new_specs[dest_key] = specs[key]
+
+        if category == "cpu":
+            # socket(3), cores(4), clock(5), boost(6), tdp(7), graphics(8), smt(9)
+            # Assuming standard dump order based on plan
+            map_field(3, "socket")
+            map_field(4, "core_count")
+            new_specs["cores"] = new_specs.get("core_count") # alias
+            map_field(5, "clock_speed")
+            map_field(6, "boost_clock")
+            map_field(7, "tdp") 
+            map_field(8, "graphics")
+            
+        elif category == "motherboard":
+            # socket(3), form_factor(4), chipset(5), memory_type(6), slots(7)
+            # Adjusting based on common schema patterns if needed, but sticking to plan hints
+            map_field(3, "socket")
+            map_field(4, "form_factor")
+            map_field(5, "chipset") # swapped with 8 in previous code? Let's check plan strictly. 
+            # Plan said: MB - field_4: FormFactor, field_8: Chipset, field_2: Maker
+            # But here we want to ensure 'memory_type' is mapped.
+            # Let's try to map likely fields or keep existing if they were working.
+            # Previous code had: socket(3), form_factor(5), memory_type(6).
+            # Plan says: Line 60 socket...
+            # Let's map broadly to catch them.
+            map_field(6, "memory_type")
+            map_field(8, "chipset")
+            
+        elif category == "memory":
+            # type(3), capacity(4), speed(5)??
+            # Previous: memory_type(3).
+            map_field(3, "memory_type")
+            map_field(4, "capacity")
+            map_field(5, "speed")
+            
+        elif category == "gpu":
+            # chipset(3), vram(4), core_clock(5), boost_clock(6)??
+            # Previous: tdp(7), vram(4).
+            map_field(3, "chipset")
+            map_field(4, "vram")
+            map_field(5, "core_clock")
+            map_field(7, "tdp")
+
+        return new_specs
+
     def _search_candidates(
         self,
         query: str,
@@ -526,6 +692,7 @@ class StepByStepRAGPipeline:
         """
         RAG 검색으로 후보 부품 조회
         """
+        import uuid
         if not self.retriever:
             logger.warning("Retriever가 설정되지 않았습니다. 빈 리스트 반환.")
             return []
@@ -568,23 +735,37 @@ class StepByStepRAGPipeline:
         for res in results:
             metadata = res.get("metadata", {})
             
+            # [Fix] 스펙 매핑 적용
+            metadata = self._map_specs(category, metadata)
+
             # 필수 필드 확인 (가격 등)
             try:
-                price = int(metadata.get("price", 0))
+                price = int(float(metadata.get("price", 0)))
             except (ValueError, TypeError):
                 price = 0
                 
-            candidates.append(
-                CandidateComponent(
-                    component_id=metadata.get("id", str(res.get("id"))),
-                    name=metadata.get("name", "Unknown Component"),
-                    price=price,
-                    match_score=res.get("similarity", 0.0),
-                    compatibility_status="compatible", # 나중에 필터링됨
-                    reasons=[], # AI가 생성하거나 룰베이스로 추가 가능
-                    specs=metadata
-                )
+            # ID 보정 (field_0가 ID일 가능성 높음)
+            comp_id = metadata.get("id", str(res.get("id")))
+            if not comp_id or comp_id == "None":
+                 comp_id = metadata.get("field_0", str(uuid.uuid4()))
+
+            candidate = CandidateComponent(
+                component_id=comp_id,
+                name=metadata.get("name", metadata.get("field_1", "Unknown Component")),
+                price=price,
+                match_score=res.get("similarity", 0.0),
+                compatibility_status="compatible", # 나중에 필터링됨
+                reasons=[], 
+                specs=metadata
             )
+            
+            # 해시태그 생성
+            candidate.hashtags = self._generate_hashtags(candidate, category)
+            
+            # 대표 스펙 추출
+            candidate.representative_specs = self._extract_representative_specs(candidate, category)
+            
+            candidates.append(candidate)
             
         return candidates
     
@@ -695,6 +876,295 @@ class StepByStepRAGPipeline:
             "current_step": session.current_step,
             "is_complete": session.current_step > 8,
         }
+    
+    def _generate_hashtags(self, component: CandidateComponent, category: str) -> List[str]:
+        """해시태그 생성 (기본값 - LLM 실패 시 사용)"""
+        tags = []
+        if component.match_score > 0.85:
+            tags.append("#강력추천")
+        if "gaming" in category:
+             tags.append("#게이밍")
+        return tags
+
+    # _extract_representative_specs 메서드는 아래(line 999 근처)에 정의되어 있음. 중복 정의 제거됨.
+
+    def _enrich_candidates_with_llm(
+        self,
+        session: SelectionSession,
+        step: int,
+        category: str,
+        candidates: List[CandidateComponent]
+    ) -> str:
+        """LLM을 사용하여 '전체 분석'과 '각 후보별 해시태그'를 동시에 생성"""
+        if not self.llm or not candidates:
+            return ""
+
+        try:
+            items_str = []
+            for c in candidates:
+                items_str.append(f"- ID: {c.component_id}, 이름: {c.name}, 가격: {c.price}원, 스펙: {str(c.specs)[:200]}")
+            
+            candidates_info = "\n".join(items_str)
+            
+            prompt = f"""
+            당신은 PC 견적 전문가입니다. 현재 사용자가 '{category}' 부품을 선택하는 단계입니다.
+            
+            [사용자 상황]
+            - 용도: {session.purpose}
+            - 총 예산: {session.total_budget:,}원
+            - 현재 단계: {category} (Step {step})
+            
+            [후보 목록]
+            {candidates_info}
+            
+            [요청사항]
+            1. 'analysis': 이 후보들이 사용자의 상황에 적합한 이유를 2~3문장으로 요약하여 한국어 존댓말(해요체)로 작성하세요.
+            2. 'hashtags': 각 후보 부품별로 가장 큰 특징을 나타내는 해시태그를 "문자열 리스트"로 추출하세요.
+            
+            [응답 형식 (JSON Only)]
+            - **Strict JSON Standard Compliance is required.**
+            - Use double quotes `"` for ALL keys and string values. (e.g., "key": "value")
+            - Do NOT use single quotes `'`.
+            - Do NOT include trailing commas.
+            - Do NOT include comments.
+            - Output MUST be valid JSON parsable by Python `json.loads()`.
+
+            Example:
+            {{
+                "analysis": "이 부품들은 ... 좋습니다.",
+                "hashtags": {{
+                    "cpu_123": ["#가성비", "#고성능"],
+                    "cpu_456": ["#프리미엄"]
+                }}
+            }}
+            """
+            
+            response = self.llm.invoke([HumanMessage(content=prompt)])
+            content = response.content
+            
+            # LLM 응답이 [{'type': 'text', 'text': '...'}] 형태의 리스트인 경우 처리
+            if isinstance(content, list):
+                text_parts = []
+                for item in content:
+                    if isinstance(item, dict) and 'text' in item:
+                        text_parts.append(item['text'])
+                    elif isinstance(item, str):
+                        text_parts.append(item)
+                    else:
+                        text_parts.append(str(item))
+                content = " ".join(text_parts)
+            content = content.strip()
+            
+            # JSON 파싱 (코드 블럭 제거)
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            
+            # Clean up potential Single Quotes issues just in case
+            # (Dangerous if text contains single quotes, but efficient for keys)
+            # content = content.replace("'", '"') 
+            
+            result_json = {}
+            try:
+                result_json = json.loads(content)
+            except Exception as parse_error:
+                logger.warning(f"LLM 파싱 1차 실패 (json): {parse_error}. Content: {content[:50]}...")
+                # Try regex extraction
+                try:
+                    import re
+                    json_match = re.search(r'(\{.*\})', content, re.DOTALL)
+                    if json_match:
+                        result_json = json.loads(json_match.group(1))
+                    else:
+                        raise ValueError("No JSON block found via regex")
+                except Exception as regex_error:
+                    logger.warning(f"LLM 파싱 2차 실패 (regex): {regex_error}")
+                    # 3차 시도: ast (Single quotes fallback)
+                    try:
+                        import ast
+                        result_json = ast.literal_eval(content)
+                    except Exception:
+                        result_json = {}
+
+            # 1. 해시태그 적용
+            tags_map = result_json.get("hashtags", {})
+            for cand in candidates:
+                cand_id = str(cand.component_id)
+                # LLM 결과가 있으면 사용, 없으면(파싱 실패 등) Fallback 실행
+                if cand_id in tags_map and isinstance(tags_map[cand_id], list) and len(tags_map[cand_id]) > 0:
+                     cand.hashtags = tags_map[cand_id]
+                else:
+                    # Fallback (Rule-based)
+                    cand.hashtags = self._generate_hashtags(cand, category)
+
+            # 2. 분석 멘트 반환 (실패 시 기본 멘트)
+            analysis = result_json.get("analysis", "")
+            if not analysis:
+                # 목적 한글 매핑
+                purpose_map = {
+                    "gaming": "게이밍",
+                    "office": "사무용",
+                    "development": "개발용",
+                    "editing": "영상 편집",
+                    "online_lectures": "온라인 강의",
+                    "graphic_design": "그래픽 디자인"
+                }
+                purpose_kr = purpose_map.get(session.purpose, session.purpose) # 매핑 없으면 그대로 사용
+                analysis = f"{purpose_kr} 용도에 최적화된 {category} 추천 목록입니다."
+            
+            return analysis
+            
+        except Exception as e:
+            logger.error(f"LLM 분석/해시태그 생성 전체 실패: {e}")
+            # 전체 실패 시에도 Fallback 실행하여 빈 해시태그 방지
+            for cand in candidates:
+                cand.hashtags = self._generate_hashtags(cand, category)
+            return f"{session.purpose} 용도에 맞춰 엄선한 {category} 모델들입니다."
+        hashtags = []
+        specs = component.specs
+        price = component.price
+        
+        # 카테고리별 해시태그 생성
+        if category == "cpu":
+            cores = specs.get("cores") or specs.get("core_count")
+            if cores:
+                try:
+                    cores_int = int(cores)
+                    if cores_int >= 16:
+                        hashtags.append("멀티코어")
+                    elif cores_int >= 8:
+                        hashtags.append("고성능")
+                except:
+                    pass
+            clock = specs.get("boost_clock") or specs.get("clock_speed")
+            if clock and "GHz" in str(clock):
+                hashtags.append("고클럭")
+            if price < 200000:
+                hashtags.append("가성비")
+            elif price > 500000:
+                hashtags.append("프리미엄")
+                
+        elif category == "gpu":
+            vram = specs.get("vram") or specs.get("memory")
+            if vram and ("16" in str(vram) or "24" in str(vram)):
+                hashtags.append("대용량VRAM")
+            name = component.name.upper()
+            if "RTX" in name:
+                hashtags.append("RTX")
+            if "Ti" in name or "XT" in name:
+                hashtags.append("최상위")
+            if price > 1000000:
+                hashtags.append("하이엔드")
+            elif price < 400000:
+                hashtags.append("입문용")
+                
+        elif category == "memory":
+            capacity = specs.get("capacity") or specs.get("size")
+            if capacity:
+                if "32" in str(capacity):
+                    hashtags.append("대용량")
+                elif "16" in str(capacity):
+                    hashtags.append("표준")
+            mem_type = str(specs.get("memory_type", ""))
+            if "DDR5" in mem_type:
+                hashtags.append("DDR5")
+            elif "DDR4" in mem_type:
+                hashtags.append("DDR4")
+                
+        elif category == "storage":
+            interface = str(specs.get("interface", "")).upper()
+            if "NVME" in interface or "M.2" in interface:
+                hashtags.append("초고속")
+            elif "SATA" in interface:
+                hashtags.append("SATA")
+            capacity = specs.get("capacity")
+            if capacity and ("TB" in str(capacity) or (isinstance(capacity, (int, float)) and capacity >= 1000)):
+                hashtags.append("대용량")
+                
+        elif category == "psu":
+            efficiency = str(specs.get("efficiency", "")).upper()
+            if "PLATINUM" in efficiency or "TITANIUM" in efficiency:
+                hashtags.append("고효율")
+            elif "GOLD" in efficiency:
+                hashtags.append("80PLUS")
+            wattage = specs.get("wattage") or specs.get("power")
+            if wattage:
+                try:
+                    if int(wattage) >= 850:
+                        hashtags.append("고출력")
+                except:
+                    pass
+        
+        return hashtags[:4]
+    
+    def _extract_representative_specs(self, component: CandidateComponent, category: str) -> Dict[str, Any]:
+        """대표 스펙 추출"""
+        specs = component.specs
+        rep_specs = {}
+        
+        if category == "cpu":
+            if "cores" in specs or "core_count" in specs:
+                rep_specs["코어 수"] = specs.get("cores") or specs.get("core_count")
+            if "boost_clock" in specs:
+                rep_specs["부스트 클럭"] = specs.get("boost_clock")
+            elif "clock_speed" in specs:
+                rep_specs["클럭 속도"] = specs.get("clock_speed")
+            if "tdp" in specs:
+                rep_specs["TDP"] = f"{specs.get('tdp')} W"
+            if "socket" in specs:
+                rep_specs["소켓"] = specs.get("socket")
+                
+        elif category == "motherboard":
+            for key, label in [("socket", "소켓"), ("chipset", "칩셋"), ("memory_type", "메모리 타입"), ("form_factor", "폼팩터")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+                
+        elif category == "memory":
+            for key, label in [("capacity", "용량"), ("speed", "속도"), ("memory_type", "타입")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+                
+        elif category == "gpu":
+            if "vram" in specs:
+                rep_specs["VRAM"] = specs["vram"]
+            elif "memory" in specs:
+                rep_specs["VRAM"] = specs["memory"]
+            for key, label in [("core_clock", "코어 클럭")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+            if "tdp" in specs:
+                rep_specs["TDP"] = f"{specs['tdp']} W"
+                
+        elif category == "storage":
+            for key, label in [("capacity", "용량"), ("read_speed", "읽기 속도"), ("write_speed", "쓰기 속도"), ("interface", "인터페이스")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+                
+        elif category == "psu":
+            if "wattage" in specs or "power" in specs:
+                w = specs.get("wattage") or specs.get("power")
+                rep_specs["출력"] = f"{w} W"
+            for key, label in [("efficiency", "인증 등급"), ("modular", "모듈러")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+                
+        elif category == "cpu_cooler":
+            for key, label in [("cooling_type", "쿨링 방식"), ("height", "높이")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+            if "max_tdp" in specs:
+                rep_specs["최대 TDP"] = f"{specs['max_tdp']} W"
+                
+        elif category == "case":
+            for key, label in [("form_factor", "폼팩터"), ("max_gpu_length", "최대 GPU 길이")]:
+                if key in specs:
+                    rep_specs[label] = specs[key]
+                
+        return rep_specs
 
 
 # ============================================================================

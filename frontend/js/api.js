@@ -57,10 +57,11 @@ export async function getPCRecommendation(userMessage, options = {}) {
   }
 
   // AgentChatRequest 형식에 맞춤
+  // AgentChatRequest 형식에 맞춤
   const payload = {
     query,
-    // budget, purpose 등은 필요하다면 options에서 받아올 수 있음
-    // 현재는 Agent가 알아서 분석하도록 둠
+    budget: options.budget || null,
+    purpose: options.purpose || null,
     preferences: options.preferences || {}
   };
 
@@ -82,7 +83,8 @@ export async function getPCRecommendation(userMessage, options = {}) {
     components: data.components || [],
     total_price: data.total_price,
     status: data.status,
-    compatibility: data.compatibility_check
+    compatibility: data.compatibility_check,
+    extracted_requirements: data.extracted_requirements
   };
 }
 

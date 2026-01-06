@@ -46,6 +46,7 @@ const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case', 
 let stepSessionId = null;  // Step-by-step 세션 ID
 let currentStep = 0;       // 현재 단계 (0: 초기, 1-8: 부품 선택)
 let isInStepMode = false;  // Step-by-step 모드 활성화 여부
+let buildContext = { budget: null, purpose: null, preferences: {} }; // 빌드 요구사항 컨텍스트
 
 /**
  * 로컬 스토리지 키
@@ -84,8 +85,10 @@ function init() {
       window.history.replaceState({}, document.title, newUrl);
     }
   } else if (chatHistory.length === 0) {
-    // 히스토리가 없고 초기 메시지도 없으면 환영 메시지
-    // addMessage('안녕하세요! 어떤 PC를 맞추고 싶으신가요?', 'ai');
+    // 히스토리가 없고 초기 메시지도 없으면 환영 메시지 및 질문 유도
+    setTimeout(() => {
+      addMessageWithTyping('안녕하세요! AI PC 빌더입니다.\n어떤 용도의 PC를 찾으시나요? 예산은 어느 정도로 생각하시나요?\n(예: "배그용 150만원", "사무용 50만원")', 'ai');
+    }, 500);
   }
 
   // UI 복원 (선택된 부품 등)
@@ -252,40 +255,14 @@ async function handleSendMessage(message) {
   const loadingMessage = addMessage('', 'ai', true);
 
   try {
-    if (isBuildRequest && !isInStepMode) {
-      // Step-by-Step 모드 시작
-      const { getStepCandidates } = await import('./api.js');
-
-      // 초기 세션 시작
-      const stepResponse = await getStepCandidates({
-        query: message,
-        current_step: 0,
-        budget: extractBudgetFromMessage(message),
-        purpose: extractPurposeFromMessage(message)
-      });
-
+    if (isInStepMode) {
+      // Step 모드 활성 중 - 대화는 Multi-Agent로 (단순 채팅)
+      // Step 진행(버튼 클릭)은 별도 핸들러가 처리함. 여기서 사용자가 타이핑한 메시지는 잡담/질문으로 처리.
       stopDynamicLoadingText();
       loadingMessage.remove();
 
-      // Step 모드 활성화
-      isInStepMode = true;
-      stepSessionId = stepResponse.session_id;
-      currentStep = stepResponse.step;
-
-      // AI 분석 메시지
-      await addMessageWithTyping(stepResponse.analysis, 'ai');
-      chatHistory.push({ role: 'model', text: stepResponse.analysis });
-
-      // 부품 후보 표시
-      displayRecommendations(stepResponse.candidates);
-      saveState();
-
-    } else if (isInStepMode) {
-      // Step 모드 활성 중 - 대화는 Multi-Agent로
-      stopDynamicLoadingText();
-      loadingMessage.remove();
-
-      const response = await getPCRecommendation(message);
+      const { getPCRecommendation } = await import('./api.js');
+      const response = await getPCRecommendation(message, buildContext);
 
       if (response.analysis) {
         await addMessageWithTyping(response.analysis, 'ai');
@@ -294,19 +271,88 @@ async function handleSendMessage(message) {
       saveState();
 
     } else {
-      // 일반 대화 모드
-      const response = await getPCRecommendation(message);
+      // 일반 대화 및 빌드 요청 (Agent가 판단)
+      const { getPCRecommendation, getStepCandidates } = await import('./api.js');
+
+      // Agent에게 쿼리 전송 (현재 Context 포함)
+      const agentResponse = await getPCRecommendation(message, buildContext);
 
       stopDynamicLoadingText();
       loadingMessage.remove();
 
-      if (response.analysis) {
-        await addMessageWithTyping(response.analysis, 'ai');
-        chatHistory.push({ role: 'model', text: response.analysis });
+      // 1. Context 업데이트 (Agent가 추출한 정보 반영)
+      if (agentResponse.extracted_requirements) {
+        const req = agentResponse.extracted_requirements;
+        if (req.budget) {
+          // 예산 문자열("1,000,000원")을 정수로 변환
+          const budgetStr = String(req.budget);
+          const budgetInt = parseInt(budgetStr.replace(/[^0-9]/g, ''), 10);
+          if (!isNaN(budgetInt)) {
+            buildContext.budget = budgetInt;
+          }
+        }
+        if (req.purpose) buildContext.purpose = req.purpose;
+        if (req.preferences) Object.assign(buildContext.preferences, req.preferences);
       }
 
-      if (response.components && response.components.length > 0) {
-        displayRecommendations(response.components);
+      // 2. 상태 분기 처리
+      if (agentResponse.status === 'missing_info') {
+        // 정보 부족 -> 질문 출력
+        const reply = agentResponse.analysis || "죄송합니다. 조금 더 자세히 말씀해 주시겠어요?";
+        await addMessageWithTyping(reply, 'ai');
+        chatHistory.push({ role: 'model', text: reply });
+
+      } else if (agentResponse.status === 'success' || agentResponse.status === 'completed') {
+        // 정보 수집 완료 -> Step Mode 진입 트리거
+
+        // Agent 멘트 출력 (예: "견적을 시작합니다")
+        if (agentResponse.analysis) {
+          await addMessageWithTyping(agentResponse.analysis, 'ai');
+          chatHistory.push({ role: 'model', text: agentResponse.analysis });
+        }
+
+        // 로딩 메시지 출력
+        await addMessageWithTyping("🔍 고객님의 요구사항에 딱 맞는 부품을 찾고 있습니다... 잠시만 기다려 주세요.", 'ai');
+
+        // Step 1 API 호출 (추출된 budget/purpose 사용)
+        const stepResponse = await getStepCandidates({
+          query: message,
+          current_step: 0,
+          budget: buildContext.budget,
+          purpose: buildContext.purpose || 'general'
+        });
+
+        // 상태 전환
+        isInStepMode = true;
+        stepSessionId = stepResponse.session_id;
+        currentStep = stepResponse.step;
+
+        // 가이드 출력
+        if (stepResponse.category_description) {
+          let guideMsg = `**${stepResponse.step_name || stepResponse.category || '부품'}**\n${stepResponse.category_description}`;
+          if (stepResponse.spec_meanings && Object.keys(stepResponse.spec_meanings).length > 0) {
+            guideMsg += '\n\n**주요 스펙 가이드:**\n';
+            guideMsg += Object.entries(stepResponse.spec_meanings)
+              .map(([key, desc]) => `- **${key}**: ${desc}`)
+              .join('\n');
+          }
+          await addMessageWithTyping(guideMsg, 'ai');
+          chatHistory.push({ role: 'model', text: guideMsg });
+        }
+
+        // 중복 메시지 방지 후 출력
+        if (stepResponse.analysis && stepResponse.analysis !== agentResponse.analysis) {
+          await addMessageWithTyping(stepResponse.analysis, 'ai');
+          chatHistory.push({ role: 'model', text: stepResponse.analysis });
+        }
+
+        displayRecommendations(stepResponse.candidates);
+
+      } else {
+        // 그 외 (오류 또는 일반 대화만 지속)
+        const reply = agentResponse.analysis || "죄송합니다. 처리에 문제가 발생했습니다.";
+        await addMessageWithTyping(reply, 'ai');
+        chatHistory.push({ role: 'model', text: reply });
       }
 
       saveState();
@@ -350,9 +396,21 @@ function extractBudgetFromMessage(message) {
  * 메시지에서 목적 추출
  */
 function extractPurposeFromMessage(message) {
-  if (message.includes('게임') || message.includes('게이밍')) return 'gaming';
-  if (message.includes('작업') || message.includes('워크스테이션')) return 'workstation';
-  return 'general';
+  const msg = message.toLowerCase();
+
+  // Gaming
+  if (['게임', '게이밍', '배그', '롤', '오버워치', '발로란트', '스팀', 'game', 'gaming'].some(k => msg.includes(k))) return 'gaming';
+
+  // Workstation
+  if (['작업', '워크스테이션', '렌더링', '캐드', '영상', '편집', '포토샵', '프리미어', '코딩', '개발', '프로그래밍', '서버', '인공지능', '러닝', '학습', 'work', 'workstation', 'graphic', 'video'].some(k => msg.includes(k))) return 'workstation';
+
+  // Streaming
+  if (['방송', '스트리밍', '송출', '유튜브', '트위치', '치지직', 'stream', 'broadcast'].some(k => msg.includes(k))) return 'streaming';
+
+  // General (Office/Home)
+  if (['사무', '가정', '인강', '영화', '웹서핑', '일반', '한글', '엑셀', '문서', 'office', 'home'].some(k => msg.includes(k))) return 'general';
+
+  return null;
 }
 
 /**
@@ -475,7 +533,8 @@ function addMessage(text, type = 'user', isLoading = false) {
   } else {
     const bubble = document.createElement('div');
     bubble.className = 'message-bubble';
-    bubble.textContent = text;
+    // Format message for readability
+    bubble.innerHTML = formatMessage(text);
     messageDiv.appendChild(bubble);
   }
 
@@ -563,10 +622,48 @@ async function addMessageWithTyping(text, type = 'ai') {
         chatMessages.scrollTop = chatMessages.scrollHeight;
       } else {
         clearInterval(intervalId);
+        // 타이핑 완료 후 마크다운 포맷팅 적용
+        bubble.innerHTML = formatMessage(text);
         resolve();
       }
     }, typingSpeed);
   });
+}
+
+/**
+ * 텍스트 포맷팅 (마크다운 -> HTML)
+ * - **Bold**
+ * - Newline (\n -> <br>)
+ * - List (- item, 1. item)
+ */
+function formatMessage(text) {
+  if (!text) return '';
+
+  // 1. HTML Escape (보안)
+  let html = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // 2. Bold (**text**)
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+  // 3. Newlines (\n)
+  html = html.replace(/\n/g, '<br>');
+
+  // 4. Bullet lists (- item) - 간단 변환
+  // 줄 시작 또는 <br> 뒤에 오는 "- "를 "• "로 변경하고 들여쓰기 효과
+  html = html.replace(/(?:^|<br>)-\s(.*?)(?=<br>|$)/g, '<br><span style="padding-left:10px">• $1</span>');
+
+  // 5. Numbered lists (1. item)
+  html = html.replace(/(?:^|<br>)(\d+)\.\s(.*?)(?=<br>|$)/g, '<br><span style="padding-left:10px">$1. $2</span>');
+
+  // 4,5번 과정에서 생긴 불필요한 첫 줄 <br> 제거
+  if (html.startsWith('<br>')) {
+    html = html.substring(4);
+  }
+
+  return html;
 }
 
 // 아이콘 정의
@@ -599,6 +696,14 @@ function displayRecommendations(components) {
   const list = document.createElement('div');
   list.className = 'recommendation-list';
 
+  // 카테고리 설명 메시지 출력 (한 번만)
+  if (components.length > 0 && components[0].category) {
+    // API 응답에 category_description 등이 포함되어 있다고 가정
+    // 현재 구조상 API 응답 전체를 여기로 넘기지 않고 components만 넘기고 있음.
+    // 따라서 handleSendMessage/handleCardClick에서 displayRecommendations 호출 전에 설명을 출력하는 것이 더 적절함.
+    // 하지만 여기서 컴포넌트 데이터에 메타데이터가 있다면 활용 가능.
+  }
+
   components.forEach((component, index) => {
     const card = createRecommendationCard(component);
     // 순차적 등장 애니메이션 딜레이 (속도 개선)
@@ -627,6 +732,12 @@ function createRecommendationCard(component) {
   // 데이터 속성으로 식별자 저장 (재선택/해제용)
   card.dataset.name = component.name;
   card.dataset.category = component.category;
+
+  // 호환성 경고 처리
+  if (component.compatibility_status === 'warning') {
+    card.classList.add('warning');
+    card.title = "호환 이슈가 있을 수 있습니다 (예: 예산 초과, 소켓 불일치 등)";
+  }
 
   // 아이콘 처리 - 이미지가 있으면 이미지, 없으면 SVG
   let iconHtml;
@@ -662,38 +773,43 @@ function createRecommendationCard(component) {
     : (component.features || []);
 
   const tagsHtml = tags
-    .slice(0, 3) // 최대 3개
+    .slice(0, 4) // 최대 4개
     .map(tag => {
       const text = tag.startsWith('#') ? tag : `#${tag}`;
-      return `<span class="tag">${text}</span>`;
+      // CSS 클래스 'hashtag' 사용 (builder.css에 추가됨)
+      return `\u003cspan class=\"hashtag\"\u003e${text}\u003c/span\u003e`;
     })
     .join('');
 
+  // 가격 표시
+  const priceText = typeof component.price === 'number' && component.price > 0
+    ? formatPrice(component.price)
+    : '가격 정보 없음';
+
   card.innerHTML = `
-    <div class="card-header">
-      <div class="card-icon">${iconHtml}</div>
-      <div class="card-info">
-        <div class="card-category">${component.category}</div>
-        <div class="card-name" title="${component.name}">${component.name}</div>
-        <div class="card-tags">
+    \u003cdiv class=\"card-header\"\u003e
+      \u003cdiv class=\"card-icon\"\u003e${iconHtml}\u003c/div\u003e
+      \u003cdiv class=\"card-info\"\u003e
+        \u003cdiv class=\"card-category\"\u003e${component.category || '부품'}\u003c/div\u003e
+        \u003cdiv class=\"card-name\" title=\"${component.name}\"\u003e${component.name}\u003c/div\u003e
+        \u003cdiv class=\"component-hashtags\"\u003e
           ${tagsHtml}
-        </div>
-      </div>
-      <div class="card-right">
-        <div class="card-price">${component.price}</div>
-        <button class="info-btn" type="button" aria-label="성능 그래프 보기">
-          <span class="info-dot">i</span>
-          <span class="info-label">담기</span>
-        </button>
-      </div>
-    </div>
+        \u003c/div\u003e
+      \u003c/div\u003e
+      \u003cdiv class=\"card-right\"\u003e
+        \u003cdiv class=\"card-price\"\u003e${priceText}\u003c/div\u003e
+        \u003cbutton class=\"info-btn\" type=\"button\" aria-label=\"담기\"\u003e
+          \u003cspan class=\"info-label\"\u003e담기\u003c/span\u003e
+        \u003c/button\u003e
+      \u003c/div\u003e
+    \u003c/div\u003e
   `;
 
   // 담기 버튼 클릭 시 부품 선택 (애니메이션 포함)
   const infoBtn = card.querySelector('.info-btn');
   if (infoBtn) {
     infoBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+      e.stopPropagation(); // 카드 클릭 이벤트 전파 방지
       if (card.classList.contains('selected')) return;
       handleCardClick(e, card, component);
     });
@@ -815,6 +931,165 @@ function showPerformancePanel(component) {
 
   const perfBody = panel.querySelector('.perf-body');
   perfBody.innerHTML = '';
+
+  // ----- 대표 스펙 대시보드 (Visual Spec Dashboard) -----
+  let repSpecs = component.representative_specs || {};
+
+  // Fallback: 대표 스펙이 없으면 전체 스펙 중 일부를 표시
+  if (Object.keys(repSpecs).length === 0 && component.specs) {
+    const blockedKeys = ['id', 'name', 'price', 'image', 'imageUrl', 'category', 'description', 'link', 'mall_link', 'hashtags', 'compatibility_status', 'reasons', 'score'];
+    repSpecs = Object.entries(component.specs)
+      .filter(([k, v]) => !blockedKeys.includes(k) && !k.startsWith('field_') && typeof v !== 'object' && v !== null)
+      .slice(0, 10)
+      .reduce((obj, [k, v]) => ({ ...obj, [k]: v }), {});
+  }
+
+  // --- 스펙 매핑 (한글 변환 & 아이콘 & 시각화 타입) ---
+  const SPEC_MAPPING = {
+    // Global / Common
+    'cores': { label: '코어 수', icon: '🧠', type: 'bar', max: 24, unit: '개' },
+    'core_count': { label: '코어 수', icon: '🧠', type: 'bar', max: 24, unit: '개' },
+    'clock': { label: '동작 속도', icon: '⚡', type: 'bar', max: 6.0, unit: 'GHz' },
+    'socket': { label: '소켓', icon: '🔌', type: 'badge' },
+    'graphics': { label: '내장 그래픽', icon: '🎨', type: 'text' },
+    'capacity': { label: '용량', icon: '💾', type: 'bar', max: 64, unit: 'GB' },
+    'speed': { label: '동작 클럭', icon: '🚀', type: 'bar', max: 8000, unit: 'MHz' },
+
+    // New Semantic Keys (Backend Mapped)
+    'tdp': { label: 'TDP', icon: '⚡', type: 'text', unit: 'W' },
+    'form_factor': { label: '폼팩터', icon: '📐', type: 'text' },
+    'memory_type': { label: '메모리 타입', icon: '💾', type: 'badge' },
+    'vram': { label: 'VRAM', icon: '💾', type: 'text' },
+    'chipset': { label: '칩셋', icon: '🎛️', type: 'text' },
+    'brand': { label: '제조사', icon: '🏭', type: 'badge' },
+
+    // Default Fallback
+    'default': { label: '기타 스펙', icon: '🔹', type: 'text' }
+  };
+
+  function getSpecInfo(key) {
+    const lowerKey = key.toLowerCase();
+
+    // 1. 공통 매핑 확인 (Semantic Key 우선)
+    if (SPEC_MAPPING[lowerKey]) return SPEC_MAPPING[lowerKey];
+
+    // 2. Fallback
+    if (lowerKey.startsWith('field_')) return { label: lowerKey, icon: '🏷️', type: 'text' };
+    return { label: key, icon: '🔹', type: 'text' };
+  }
+
+  function parseNumeric(val) {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return parseFloat(val.replace(/[^0-9.]/g, '')) || 0;
+    return 0;
+  }
+
+  if (Object.keys(repSpecs).length > 0) {
+    const specSection = document.createElement('div');
+    specSection.className = 'perf-section spec-section';
+
+    const specGridHTML = Object.entries(repSpecs).map(([key, value]) => {
+      const info = getSpecInfo(key);
+      const cleanValue = String(value).replace(/['"]/g, '');
+      let visualContent = '';
+
+      if (info.type === 'bar') {
+        const numVal = parseNumeric(cleanValue);
+        const percent = Math.min((numVal / info.max) * 100, 100);
+        visualContent = `
+          <div class="spec-bar-container">
+            <div class="spec-bar-bg">
+              <div class="spec-bar-fill" style="width: ${percent}%"></div>
+            </div>
+          </div>
+        `;
+      } else if (info.type === 'badge') {
+        visualContent = `<span class="spec-badge">${cleanValue}</span>`;
+      }
+
+      // 텍스트 표시 (Ba bar일 경우 숫자+단위만 표시, 아닐 경우 값 전체 표시)
+      const displayValue = info.type === 'badge' ? '' : cleanValue; // 뱃지는 위에서 처리함
+
+      return `
+        <div class="spec-card">
+          <div class="spec-header">
+            <div class="spec-icon">${info.icon}</div>
+            <div class="spec-label">${info.label}</div>
+          </div>
+          <div class="spec-body">
+             ${info.type !== 'badge' ? `<div class="spec-value" title="${cleanValue}">${cleanValue}</div>` : visualContent}
+             ${info.type === 'bar' ? visualContent : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    specSection.innerHTML = `
+      <div class="section-title">✨ 스펙 비주얼라이저</div>
+      <div class="spec-dashboard-grid">
+        ${specGridHTML}
+      </div>
+    `;
+
+    const style = document.createElement('style');
+    style.innerHTML = `
+      .spec-dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 16px;
+        margin-top: 15px;
+      }
+      .spec-card {
+        background: rgba(30, 30, 40, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        backdrop-filter: blur(10px);
+      }
+      .spec-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .spec-icon { font-size: 1.2rem; }
+      .spec-label { font-size: 0.8rem; color: #aaa; font-weight: 500; }
+      .spec-value { 
+        font-size: 1.1rem; 
+        font-weight: 700; 
+        color: #fff; 
+        margin-bottom: 6px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .spec-bar-container {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+      }
+      .spec-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+        border-radius: 3px;
+      }
+      .spec-badge {
+         background: rgba(79, 172, 254, 0.2);
+         color: #4facfe;
+         padding: 4px 8px;
+         border-radius: 6px;
+         font-size: 0.85rem;
+         font-weight: 600;
+      }
+    `;
+    specSection.appendChild(style);
+    perfBody.appendChild(specSection);
+  }
 
   // ----- 가격 추적 그래프 (라인) -----
   const rawHistory = component.priceHistory || component.history || component.trend;
@@ -1043,11 +1318,23 @@ function handleCardClick(e, cardElement, component) {
       try {
         const { selectComponent } = await import('./api.js');
 
+        // 부품 ID 추출 (component_id 또는 id 필드 사용)
+        const componentId = component.component_id || component.id || component.name;
+
+        console.log('[DEBUG] 부품 선택:', {
+          sessionId: stepSessionId,
+          componentId,
+          currentStep,
+          component
+        });
+
         // 로딩 표시
         const loadingMessage = addMessage('', 'ai', true);
 
         // 다음 단계 조회
-        const stepResponse = await selectComponent(stepSessionId, component.id, currentStep);
+        const stepResponse = await selectComponent(stepSessionId, componentId, currentStep);
+
+        console.log('[DEBUG] API 응답:', stepResponse);
 
         stopDynamicLoadingText();
         loadingMessage.remove();
@@ -1055,7 +1342,22 @@ function handleCardClick(e, cardElement, component) {
         // 단계 업데이트
         currentStep = stepResponse.step;
 
-        if (stepResponse.is_final) {
+        // 1. 카테고리 설명 메시지 출력 (다음 단계 진입 시, 마지막 단계가 아닐 경우)
+        if (!stepResponse.is_final_step && stepResponse.category_description) {
+          let guideMsg = `**${stepResponse.category_name || stepResponse.category}**\n${stepResponse.category_description}`;
+
+          if (stepResponse.spec_meanings && Object.keys(stepResponse.spec_meanings).length > 0) {
+            guideMsg += '\n\n**주요 스펙 가이드:**\n';
+            guideMsg += Object.entries(stepResponse.spec_meanings)
+              .map(([key, desc]) => `- **${key}**: ${desc}`)
+              .join('\n');
+          }
+
+          await addMessageWithTyping(guideMsg, 'ai');
+          chatHistory.push({ role: 'model', text: guideMsg });
+        }
+
+        if (stepResponse.is_final_step) {
           // 빌드 완성
           isInStepMode = false;
           await addMessageWithTyping(`PC 구성이 완료되었습니다! 총 ${stepResponse.total_price.toLocaleString('ko-KR')}원입니다.`, 'ai');
@@ -1068,8 +1370,8 @@ function handleCardClick(e, cardElement, component) {
         saveState();
 
       } catch (error) {
-        console.error('다음 단계 진행 오류:', error);
-        addMessage('다음 단계로 진행하는 중 오류가 발생했습니다.', 'error');
+        console.error('[ERROR] 다음 단계 진행 오류:', error);
+        addMessage(`다음 단계로 진행하는 중 오류가 발생했습니다: ${error.message}`, 'error');
       }
     }
   }, 500);
