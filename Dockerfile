@@ -32,6 +32,8 @@ COPY backend/ ./backend/
 # 빌드된 프론트엔드 파일 복사
 COPY --from=frontend-builder /app/dist ./dist
 
+# Python이 backend 폴더 내부를 탐색 경로에 포함하도록 설정
+ENV PYTHONPATH=/app/backend
 # 포트 설정
 ENV PORT=8080
 
