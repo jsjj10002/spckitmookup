@@ -542,27 +542,4 @@ class PriceCollectionScheduler:
         # scheduler.start()
 
 
-# ============================================================================
-# 테스트용 메인
-# ============================================================================
 
-if __name__ == "__main__":
-    # 수집기 테스트
-    collector = PriceDataCollector()
-    
-    # 가격 수집 테스트
-    components = [
-        ("RTX 4070", "gpu"),
-        ("Intel Core i5-14600K", "cpu"),
-        ("Samsung 990 Pro 1TB", "storage"),
-    ]
-    
-    for name, category in components:
-        record = collector.collect_price(name, category)
-        if record:
-            print(f"{record.component_name}: {record.avg_price:,}원")
-            collector.add_price_record(record)
-    
-    # 저장
-    collector.save_to_file("test_prices.json")
-    print("\n데이터 저장 완료")
