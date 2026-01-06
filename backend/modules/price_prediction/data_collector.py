@@ -51,11 +51,13 @@ PC 부품 가격 이력 데이터를 수집하고 저장하는 모듈.
 - [ ] 데이터 정합성 검증 로직
 """
 
+import csv
+import json
+import re
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
 from loguru import logger
 
 # TODO: 실제 크롤링 시 사용
@@ -338,6 +340,133 @@ class PriceDataCollector:
         if history:
             return history[-1].avg_price
         return None
+
+    def transform_legacy_price_data(self, source_dir_name="last_data", output_filename="transformed_prices.json"):
+        """
+        레거시 CSV 가격 데이터를 단일 JSON 파일로 변환합니다.
+
+        Args:
+            source_dir_name (str): 소스 데이터 디렉토리 이름 (data_dir 내).
+            output_filename (str): 출력 JSON 파일 이름.
+        """
+        source_dir = self.data_dir / source_dir_name
+        output_file = self.data_dir / output_filename
+
+        CATEGORY_MAP = {
+            "Case": "case",
+            "Cooler": "cooler",
+            "CPU": "cpu",
+            "MBoard": "motherboard",
+            "Power": "psu",
+            "RAM": "memory",
+            "SSD": "storage",
+            "VGA": "gpu",
+        }
+
+        logger.info("레거시 데이터 변환 시작...")
+        logger.info(f"소스 디렉토리: {source_dir}")
+
+        all_records = []
+
+        for month_dir in sorted(source_dir.iterdir()):
+            if not month_dir.is_dir() or not re.match(r"\d{4}-\d{2}", month_dir.name):
+                continue
+
+            logger.info(f"  - 처리 중: {month_dir.name}")
+
+            for csv_file in month_dir.iterdir():
+                if csv_file.suffix.lower() != ".csv":
+                    continue
+
+                category_name = csv_file.stem
+                category = CATEGORY_MAP.get(category_name)
+
+                if not category:
+                    continue
+
+                logger.info(f"    - 파일 처리: {csv_file.name}")
+                try:
+                    with open(csv_file, 'r', encoding='utf-8-sig') as f:
+                        reader = csv.reader(f)
+                        header = next(reader)
+                        
+                        dates = [h.split(" ")[0] for h in header[2:]]
+
+                        for row in reader:
+                            if not row or len(row) < 2: continue
+                            
+                            component_danawa_id = row[0]
+                            component_name = row[1]
+
+                            for i, price_str in enumerate(row[2:]):
+                                if i >= len(dates): continue
+                                
+                                price = self._parse_price(price_str)
+                                
+                                if price is not None:
+                                    record = PriceRecord(
+                                        component_id=component_danawa_id,
+                                        component_name=component_name,
+                                        category=category,
+                                        date=dates[i],
+                                        min_price=price,
+                                        avg_price=price,
+                                        max_price=price,
+                                        source="danawa-legacy-csv",
+                                        url=f"https://prod.danawa.com/info/?pcode={component_danawa_id}" if component_danawa_id.isdigit() else None
+                                    )
+                                    all_records.append(record)
+
+                except Exception as e:
+                    logger.error(f"    [오류] '{csv_file.name}' 파일 처리 중 오류 발생: {e}")
+
+        logger.info(f"총 {len(all_records)}개의 레코드를 생성했습니다.")
+
+        try:
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump([r.__dict__ for r in all_records], f, indent=2, ensure_ascii=False)
+            logger.info(f"결과를 '{output_file}' 파일에 저장했습니다.")
+        except Exception as e:
+            logger.error(f"결과 파일 저장 중 오류 발생: {e}")
+
+    def _parse_price(self, price_str: str) -> Optional[int]:
+        """
+        복잡한 가격 문자열에서 대표 가격(정품 우선)을 파싱합니다.
+        """
+        if not price_str or price_str == "0":
+            return None
+
+        prices = {}
+        parts = price_str.split('|')
+
+        for part in parts:
+            part = part.strip()
+            match = re.match(r"(.+?_)?([\d,]+)", part)
+            if match:
+                price_val_str = match.group(2).replace(',', '')
+                if price_val_str.isdigit():
+                    price_type = "unknown"
+                    if match.group(1):
+                        price_type = match.group(1).replace('_', '').strip()
+                    prices[price_type] = int(price_val_str)
+
+        priority = ["정품", "멀티팩(정품)", "벌크", "unknown", "중고", "해외구매"]
+        for p_type in priority:
+            if p_type in prices:
+                return prices[p_type]
+
+        if prices:
+            return list(prices.values())[0]
+
+        return None
+
+    def _generate_component_id(self, category: str, name: str) -> str:
+        """
+        카테고리와 이름으로 component_id 생성
+        """
+        name_slug = re.sub(r"[^a-z0-9\s-]", "", name.lower())
+        name_slug = re.sub(r"\s+", "_", name_slug.strip())
+        return f"{category}_{name_slug}"
 
 
 # ============================================================================
