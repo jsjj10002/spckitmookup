@@ -257,6 +257,84 @@ class PCOntology:
             range_type="Component",
             description="호환됨"
         ),
+
+        # CPU/메인보드 관련
+        "hasChipset": OntologyProperty(
+            name="hasChipset",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.MOTHERBOARD],
+            range_type="str",
+            description="메인보드 칩셋 (예: Z790)"
+        ),
+        "hasGeneration": OntologyProperty(
+            name="hasGeneration",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.CPU],
+            range_type="int",
+            description="CPU 세대 (예: 14)"
+        ),
+        "supportedChipsets": OntologyProperty(
+            name="supportedChipsets",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.CPU],
+            range_type="List[str]",
+            description="CPU가 지원하는 칩셋 목록"
+        ),
+
+        # 메모리 관련
+        "hasMemorySpeed": OntologyProperty(
+            name="hasMemorySpeed",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.RAM],
+            range_type="int",
+            description="메모리 속도 (MHz)"
+        ),
+        "maxMemorySpeed": OntologyProperty(
+            name="maxMemorySpeed",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.MOTHERBOARD],
+            range_type="int",
+            description="메인보드 지원 최대 메모리 속도 (MHz)"
+        ),
+        "hasMemorySlots": OntologyProperty(
+            name="hasMemorySlots",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.MOTHERBOARD],
+            range_type="int",
+            description="메인보드 메모리 슬롯 수"
+        ),
+
+        # 확장성/저장장치 관련
+        "hasPCIeVersion": OntologyProperty(
+            name="hasPCIeVersion",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.GPU, ComponentClass.MOTHERBOARD],
+            range_type="float",
+            description="GPU/메인보드 PCIe 버전"
+        ),
+        "hasM2Slots": OntologyProperty(
+            name="hasM2Slots",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.MOTHERBOARD],
+            range_type="int",
+            description="메인보드 M.2 슬롯 개수"
+        ),
+        "hasSATASlots": OntologyProperty(
+            name="hasSATASlots",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.MOTHERBOARD],
+            range_type="int",
+            description="메인보드 SATA 슬롯 개수"
+        ),
+
+        # 쿨러 관련
+        "hasHeight": OntologyProperty(
+            name="hasHeight",
+            property_type=PropertyType.DATA_PROPERTY,
+            domain=[ComponentClass.CPU_COOLER],
+            range_type="int",
+            description="쿨러 높이 (mm)"
+        ),
     }
     
     def __init__(self):

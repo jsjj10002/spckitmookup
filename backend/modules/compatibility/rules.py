@@ -59,6 +59,7 @@ class RuleCategory(str, Enum):
     FORM_FACTOR = "form_factor"
     POWER = "power"
     PHYSICAL = "physical"
+    INTERFACE = "interface"
 
 
 # ============================================================================
@@ -304,6 +305,127 @@ def check_cooler_case_height(cooler: Dict[str, Any], case: Dict[str, Any]) -> Ru
         )
 
 
+def get_pcie_version_from_string(s: str) -> Optional[float]:
+    """문자열에서 PCIe 버전(예: 4.0)을 추출합니다."""
+    if not isinstance(s, str):
+        return None
+    match = re.search(r'(\d+\.\d+)', s)
+    if match:
+        return float(match.group(1))
+    match = re.search(r'(\d+)', s) # "5" 같은 정수형 버전도 고려
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def check_gpu_mb_pcie(gpu: Dict[str, Any], mb: Dict[str, Any]) -> RuleResult:
+    """GPU-메인보드 PCIe 버전 호환성"""
+    gpu_interface = gpu.get("specs", {}).get("interface", "")
+    mb_slots = mb.get("specs", {}).get("pcie_slots", [])
+    
+    gpu_version = get_pcie_version_from_string(gpu_interface)
+    
+    mb_version = None
+    if isinstance(mb_slots, list) and mb_slots:
+        # lanes가 16인 주 슬롯을 우선으로 찾음
+        primary_slots = [s for s in mb_slots if isinstance(s, dict) and s.get("lanes") == 16]
+        if primary_slots:
+             version_str = str(primary_slots[0].get("version", ""))
+             mb_version = get_pcie_version_from_string(version_str)
+        else: # x16 슬롯 정보가 없으면 가장 높은 버전으로 가정
+             versions = [get_pcie_version_from_string(str(s.get("version",""))) for s in mb_slots if isinstance(s, dict)]
+             valid_versions = [v for v in versions if v is not None]
+             if valid_versions:
+                 mb_version = max(valid_versions)
+
+    if not gpu_version or not mb_version:
+        return RuleResult(
+            rule_id="gpu_mb_pcie",
+            passed=True,
+            severity=RuleSeverity.INFO,
+            message="PCIe 버전 정보 부족으로 호환성 자동 검사를 건너뜁니다.",
+            details={"gpu_interface": gpu_interface, "mb_slots": mb_slots},
+        )
+
+    if mb_version >= gpu_version:
+        return RuleResult(
+            rule_id="gpu_mb_pcie",
+            passed=True,
+            severity=RuleSeverity.INFO,
+            message=f"PCIe 호환: GPU(v{gpu_version})는 메인보드(v{mb_version})와 호환됩니다.",
+            details={"gpu_version": gpu_version, "mb_version": mb_version},
+        )
+    else:
+        return RuleResult(
+            rule_id="gpu_mb_pcie",
+            passed=True,
+            severity=RuleSeverity.WARNING,
+            message=f"성능 저하 가능성: GPU(PCIe {gpu_version})의 모든 성능을 사용하려면 메인보드(PCIe {mb_version})의 PCIe 버전이 {gpu_version} 이상이어야 합니다.",
+            details={"gpu_version": gpu_version, "mb_version": mb_version},
+        )
+
+
+def check_storage_mb_interface(storage: Dict[str, Any], mb: Dict[str, Any]) -> RuleResult:
+    """저장장치-메인보드 인터페이스 호환성"""
+    storage_interface = storage.get("specs", {}).get("interface", "").upper()
+    m2_slots = mb.get("specs", {}).get("m2_slots", 0)
+    sata_slots = mb.get("specs", {}).get("sata_slots", 0)
+
+    if not storage_interface:
+        return RuleResult(
+            rule_id="storage_mb_interface",
+            passed=True,
+            severity=RuleSeverity.WARNING,
+            message="저장장치의 인터페이스 정보를 확인할 수 없습니다.",
+            details={},
+        )
+    
+    if "M.2" in storage_interface:
+        if m2_slots > 0:
+            return RuleResult(
+                rule_id="storage_mb_interface",
+                passed=True,
+                severity=RuleSeverity.INFO,
+                message="M.2 저장장치를 메인보드의 M.2 슬롯에 연결할 수 있습니다.",
+                details={"interface": "M.2", "m2_slots_available": m2_slots},
+            )
+        else:
+            return RuleResult(
+                rule_id="storage_mb_interface",
+                passed=False,
+                severity=RuleSeverity.ERROR,
+                message="M.2 저장장치를 연결할 슬롯이 메인보드에 없습니다.",
+                details={"interface": "M.2", "m2_slots_available": m2_slots},
+            )
+
+    elif "SATA" in storage_interface:
+        if sata_slots > 0:
+            return RuleResult(
+                rule_id="storage_mb_interface",
+                passed=True,
+                severity=RuleSeverity.INFO,
+                message="SATA 저장장치를 메인보드의 SATA 슬롯에 연결할 수 있습니다.",
+                details={"interface": "SATA", "sata_slots_available": sata_slots},
+            )
+        else: # SATA 슬롯이 없는 경우
+            return RuleResult(
+                rule_id="storage_mb_interface",
+                passed=False,
+                severity=RuleSeverity.ERROR,
+                message="SATA 저장장치를 연결할 슬롯이 메인보드에 없습니다.",
+                details={"interface": "SATA", "sata_slots_available": sata_slots},
+            )
+            
+    # 검사 대상이 아닌 인터페이스
+    return RuleResult(
+        rule_id="storage_mb_interface",
+        passed=True,
+        severity=RuleSeverity.INFO,
+        message=f"'{storage_interface}' 인터페이스는 현재 자동 검사 대상이 아닙니다.",
+        details={"interface": storage_interface},
+    )
+
+
 # ============================================================================
 # 규칙 엔진
 # ============================================================================
@@ -388,6 +510,28 @@ class CompatibilityRules:
             applies_to=["cpu_cooler", "case"],
             check_function=check_cooler_case_height,
             description="CPU 쿨러 높이가 케이스에 맞는지 확인"
+        ))
+        
+        # GPU-메인보드 PCIe
+        self.register_rule(CompatibilityRule(
+            id="gpu_mb_pcie",
+            name="GPU-메인보드 PCIe 호환성",
+            category=RuleCategory.INTERFACE,
+            severity=RuleSeverity.WARNING,
+            applies_to=["gpu", "motherboard"],
+            check_function=check_gpu_mb_pcie,
+            description="GPU와 메인보드의 PCIe 버전 호환성 확인"
+        ))
+
+        # 저장장치-메인보드 인터페이스
+        self.register_rule(CompatibilityRule(
+            id="storage_mb_interface",
+            name="저장장치-메인보드 인터페이스 호환성",
+            category=RuleCategory.INTERFACE,
+            severity=RuleSeverity.ERROR,
+            applies_to=["storage", "motherboard"],
+            check_function=check_storage_mb_interface,
+            description="저장장치 인터페이스가 메인보드에서 지원되는지 확인"
         ))
     
     def register_rule(self, rule: CompatibilityRule):

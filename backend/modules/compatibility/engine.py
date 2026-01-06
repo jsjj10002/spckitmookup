@@ -382,8 +382,25 @@ class CompatibilityEngine:
                 by_category["case"],
             )
             checks.append(check)
+
+        # 5. CPU 쿨러-케이스 호환성
+        if "cpu_cooler" in by_category and "case" in by_category:
+            check = self._check_cpu_cooler_case(
+                by_category["cpu_cooler"],
+                by_category["case"],
+            )
+            checks.append(check)
+
+        # 6. 저장장치-메인보드 호환성
+        storage_list = [c for c in components if c.get("category") == "storage"]
+        if storage_list and "motherboard" in by_category:
+            check = self._check_storage_motherboard(
+                storage_list,
+                by_category["motherboard"],
+            )
+            checks.append(check)
         
-        # 5. 전력 계산
+        # 7. 전력 계산
         power_summary = self._calculate_power(components, by_category)
         
         if "psu" in by_category:
@@ -621,6 +638,103 @@ class CompatibilityEngine:
             message="폼팩터 정보를 확인해주세요",
             details={},
         )
+
+    def _check_cpu_cooler_case(
+        self,
+        cpu_cooler: Dict[str, Any],
+        case: Dict[str, Any],
+    ) -> CompatibilityCheck:
+        """CPU 쿨러-케이스 호환성 검사 (높이)"""
+        cooler_specs = cpu_cooler.get("specs", {})
+        case_specs = case.get("specs", {})
+        
+        cooler_height = cooler_specs.get("height", 0)  # mm
+        case_max_height = case_specs.get("max_cooler_height", 0)  # mm
+        
+        if cooler_height and case_max_height:
+            if cooler_height <= case_max_height:
+                return CompatibilityCheck(
+                    check_id="cooler_case_height",
+                    name="CPU 쿨러-케이스 높이 호환성",
+                    components=["cpu_cooler", "case"],
+                    status=CheckStatus.PASS,
+                    message=f"쿨러 높이 {cooler_height}mm, 케이스 허용 {case_max_height}mm",
+                    details={"cooler_height": cooler_height, "case_max": case_max_height},
+                )
+            else:
+                return CompatibilityCheck(
+                    check_id="cooler_case_height",
+                    name="CPU 쿨러-케이스 높이 호환성",
+                    components=["cpu_cooler", "case"],
+                    status=CheckStatus.FAIL,
+                    message=f"CPU 쿨러가 너무 높습니다: {cooler_height}mm > {case_max_height}mm",
+                    details={"cooler_height": cooler_height, "case_max": case_max_height},
+                )
+        
+        return CompatibilityCheck(
+            check_id="cooler_case_height",
+            name="CPU 쿨러-케이스 높이 호환성",
+            components=["cpu_cooler", "case"],
+            status=CheckStatus.WARNING,
+            message="CPU 쿨러/케이스 높이 정보를 확인해주세요",
+            details={},
+        )
+
+    def _check_storage_motherboard(
+        self,
+        storage_list: List[Dict[str, Any]],
+        motherboard: Dict[str, Any],
+    ) -> CompatibilityCheck:
+        """저장장치-메인보드 호환성 검사 (슬롯 수)"""
+        mb_specs = motherboard.get("specs", {})
+        m2_slots_available = mb_specs.get("m2_slots", 0)
+        sata_slots_available = mb_specs.get("sata_slots", 0)
+        
+        m2_needed = 0
+        sata_needed = 0
+        
+        for storage in storage_list:
+            storage_specs = storage.get("specs", {})
+            interface = storage_specs.get("interface", "").upper()
+            if "M.2" in interface:
+                m2_needed += 1
+            elif "SATA" in interface:
+                sata_needed += 1
+        
+        m2_ok = m2_needed <= m2_slots_available
+        sata_ok = sata_needed <= sata_slots_available
+        
+        details = {
+            "m2_needed": m2_needed,
+            "m2_available": m2_slots_available,
+            "sata_needed": sata_needed,
+            "sata_available": sata_slots_available,
+        }
+        
+        if m2_ok and sata_ok:
+            return CompatibilityCheck(
+                check_id="storage_mb_slots",
+                name="저장장치-메인보드 슬롯 호환성",
+                components=["storage", "motherboard"],
+                status=CheckStatus.PASS,
+                message="모든 저장장치가 메인보드에 연결 가능합니다.",
+                details=details,
+            )
+        else:
+            messages = []
+            if not m2_ok:
+                messages.append(f"M.2 슬롯 부족 (필요: {m2_needed}, 사용 가능: {m2_slots_available})")
+            if not sata_ok:
+                messages.append(f"SATA 슬롯 부족 (필요: {sata_needed}, 사용 가능: {sata_slots_available})")
+                
+            return CompatibilityCheck(
+                check_id="storage_mb_slots",
+                name="저장장치-메인보드 슬롯 호환성",
+                components=["storage", "motherboard"],
+                status=CheckStatus.FAIL,
+                message="; ".join(messages),
+                details=details,
+            )
     
     def _calculate_power(
         self,
