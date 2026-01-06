@@ -160,7 +160,8 @@ class TestBottleneckAnalyzer:
             cpu_score=70,
             gpu_score=72,
             memory_score=70,
-            resolution="1080p"
+            resolution="1080p",
+            workload="general"
         )
         
         # 점수 차이가 적으면 밸런스 양호

@@ -283,65 +283,35 @@ class DiagnosisResult(BaseModel):
 # ============================================================================
 
 # CPU 점수 (Cinebench R23 Multi 기준, 100점 = i9-14900K)
-CPU_BENCHMARK_SCORES = {
-    # Intel 14세대
-    "i9-14900k": 100,
-    "i7-14700k": 88,
-    "i5-14600k": 75,
-    "i5-14400f": 60,
-    
-    # Intel 13세대
-    "i9-13900k": 95,
-    "i7-13700k": 82,
-    "i5-13600k": 72,
-    "i5-13400f": 58,
-    
-    # Intel 12세대
-    "i9-12900k": 80,
-    "i7-12700k": 70,
-    "i5-12600k": 62,
-    "i5-12400f": 55,
-    
-    # AMD Ryzen 7000
-    "ryzen 9 7950x": 100,
-    "ryzen 7 7800x3d": 72,
-    "ryzen 7 7700x": 68,
-    "ryzen 5 7600x": 58,
-    
-    # AMD Ryzen 5000
-    "ryzen 9 5900x": 70,
-    "ryzen 7 5800x": 60,
-    "ryzen 5 5600x": 52,
-}
 
-# GPU 점수 (3DMark Time Spy 기준, 100점 = RTX 4090)
-GPU_BENCHMARK_SCORES = {
-    # NVIDIA RTX 40시리즈
-    "rtx 4090": 100,
-    "rtx 4080 super": 88,
-    "rtx 4080": 85,
-    "rtx 4070 ti super": 78,
-    "rtx 4070 ti": 72,
-    "rtx 4070 super": 68,
-    "rtx 4070": 62,
-    "rtx 4060 ti": 52,
-    "rtx 4060": 45,
+# 벤치마크 데이터베이스 (임시 - 실제 구현 시 외부 데이터 로드)
+# ============================================================================
+
+def load_benchmark_data(file_name: str = "benchmark_scores.json") -> Dict[str, Dict[str, int]]:
+    """JSON 파일에서 벤치마크 데이터 로드"""
+    import json
+    from pathlib import Path
     
-    # NVIDIA RTX 30시리즈
-    "rtx 3090": 72,
-    "rtx 3080": 65,
-    "rtx 3070": 55,
-    "rtx 3060 ti": 50,
-    "rtx 3060": 45,
-    "rtx 3050": 32,
+    # 현재 파일 위치 기준 data 폴더 경로
+    current_dir = Path(__file__).parent
+    data_path = current_dir / "data" / file_name
     
-    # AMD RX 7000
-    "rx 7900 xtx": 88,
-    "rx 7900 xt": 80,
-    "rx 7800 xt": 65,
-    "rx 7700 xt": 58,
-    "rx 7600": 45,
-}
+    if not data_path.exists():
+        logger.warning(f"벤치마크 데이터 파일 없음: {data_path}")
+        return {"cpu": {}, "gpu": {}}
+        
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"벤치마크 데이터 로드 실패: {e}")
+        return {"cpu": {}, "gpu": {}}
+
+# 데이터 로드
+_BENCHMARK_DATA = load_benchmark_data()
+CPU_BENCHMARK_SCORES = _BENCHMARK_DATA.get("cpu", {})
+GPU_BENCHMARK_SCORES = _BENCHMARK_DATA.get("gpu", {})
+
 
 
 # ============================================================================

@@ -1,0 +1,52 @@
+{
+    "builds": [
+        {
+            "name": "가성비 게이밍 PC (80-100만원)",
+            "price_range": [
+                800000,
+                1000000
+            ],
+            "target_resolution": "1080p",
+            "components": {
+                "cpu": "Intel Core i5-12400F",
+                "gpu": "GeForce RTX 3060 12GB",
+                "memory": "16GB DDR4-3200 (8GB x2)",
+                "storage": "500GB NVMe SSD"
+            },
+            "description": "FHD 해상도에서 대부분의 게임을 원활하게 플레이할 수 있는 가성비 구성입니다.",
+            "performance_score": 60
+        },
+        {
+            "name": "중급 게이밍 PC (130-150만원)",
+            "price_range": [
+                1300000,
+                1500000
+            ],
+            "target_resolution": "1440p",
+            "components": {
+                "cpu": "Intel Core i5-13600K",
+                "gpu": "GeForce RTX 4060 Ti",
+                "memory": "32GB DDR5-5600 (16GB x2)",
+                "storage": "1TB NVMe SSD"
+            },
+            "description": "QHD 해상도 게임이나 고사양 작업을 위한 균형 잡힌 구성입니다.",
+            "performance_score": 75
+        },
+        {
+            "name": "고성능 게이밍 PC (250만원+)",
+            "price_range": [
+                2500000,
+                3500000
+            ],
+            "target_resolution": "4K",
+            "components": {
+                "cpu": "AMD Ryzen 7 7800X3D",
+                "gpu": "GeForce RTX 4080 Super",
+                "memory": "32GB DDR5-6000 (16GB x2)",
+                "storage": "2TB NVMe SSD (PCIe 4.0)"
+            },
+            "description": "최고 사양의 게이밍 경험을 제공하는 하이엔드 구성입니다.",
+            "performance_score": 95
+        }
+    ]
+}

@@ -280,12 +280,23 @@ class BenchmarkCollector:
     
     def _load_default_data(self):
         """기본 벤치마크 데이터 로드"""
-        # TODO: JSON 파일에서 로드하도록 변경
-        # 현재는 engine.py의 하드코딩된 데이터 사용
-        from .engine import CPU_BENCHMARK_SCORES, GPU_BENCHMARK_SCORES
+        json_path = self.data_dir / "benchmark_scores.json"
         
-        self.cpu_benchmarks = CPU_BENCHMARK_SCORES.copy()
-        self.gpu_benchmarks = GPU_BENCHMARK_SCORES.copy()
+        if json_path.exists():
+            try:
+                data = self.load_from_file(json_path)
+                self.cpu_benchmarks = data.get("cpu", {})
+                self.gpu_benchmarks = data.get("gpu", {})
+                logger.info(f"벤치마크 데이터 로드됨: {json_path}")
+            except Exception as e:
+                logger.error(f"벤치마크 파일 로드 중 오류: {e}")
+                self.cpu_benchmarks = {}
+                self.gpu_benchmarks = {}
+        else:
+            logger.warning(f"벤치마크 파일 없음: {json_path}")
+            # Fallback (optional) or empty
+            self.cpu_benchmarks = {}
+            self.gpu_benchmarks = {}
     
     def load_from_file(self, filepath: Path) -> Dict[str, Any]:
         """

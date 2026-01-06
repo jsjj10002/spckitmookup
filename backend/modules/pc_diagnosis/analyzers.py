@@ -509,15 +509,41 @@ class UpgradeAdvisor:
         Returns:
             권장 빌드 리스트
         """
-        # TODO: 예산별 최적 빌드 데이터베이스 구현
-        # 현재는 placeholder
-        return [
-            {
-                "name": f"{purpose}용 {budget//10000}만원 빌드",
-                "components": {},
-                "expected_performance": "구현 예정",
-            }
-        ]
+        import json
+        from pathlib import Path
+        
+        # 데이터 파일 로드
+        data_path = Path(__file__).parent / "data" / "budget_builds.json"
+        
+        if not data_path.exists():
+            logger.warning(f"견적 설명 파일 없음: {data_path}")
+            return []
+            
+        try:
+            with open(data_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                all_builds = data.get("builds", [])
+        except Exception as e:
+            logger.error(f"견적 파일 로드 실패: {e}")
+            return []
+            
+        # 예산 범위에 맞는 빌드 필터링
+        # 사용자가 가진 예산의 80% ~ 120% 사이의 견적을 추천
+        recommended = []
+        
+        for build in all_builds:
+            min_price = build["price_range"][0]
+            max_price = build["price_range"][1]
+            avg_price = (min_price + max_price) / 2
+            
+            # 예산 범위 체크 (예산이 견적 최소가의 90% 이상이면 추천)
+            if budget >= min_price * 0.9:
+                recommended.append(build)
+                
+        # 가격 오름차순 정렬
+        recommended.sort(key=lambda x: x["price_range"][0])
+        
+        return recommended
 
 
 # ============================================================================
