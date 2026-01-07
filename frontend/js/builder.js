@@ -9,6 +9,18 @@ import { getPCRecommendation, extractPrice, formatPrice } from './api.js';
 const chatMessages = document.getElementById('chat-messages');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
+
+// Textarea 자동 높이 조절
+function autoResizeTextarea(textarea) {
+  textarea.style.height = 'auto';
+  textarea.style.height = Math.min(textarea.scrollHeight, 400) + 'px';
+}
+
+if (chatInput) {
+  chatInput.addEventListener('input', () => autoResizeTextarea(chatInput));
+  // 초기 높이 설정
+  autoResizeTextarea(chatInput);
+}
 const selectedPartsContainer = document.getElementById('selected-parts-panel'); // 선택된 부품 (에디터 영역)
 const fileList = document.getElementById('file-list'); // 추천 부품 (파일 트리)
 const resetBtn = document.getElementById('reset-btn'); // 초기화 버튼
@@ -1019,7 +1031,6 @@ function showPerformancePanel(component) {
       return `
         <div class="spec-card">
           <div class="spec-header">
-            <div class="spec-icon">${info.icon}</div>
             <div class="spec-label">${info.label}</div>
           </div>
           <div class="spec-body">
@@ -1031,7 +1042,7 @@ function showPerformancePanel(component) {
     }).join('');
 
     specSection.innerHTML = `
-      <div class="section-title">✨ 스펙 비주얼라이저</div>
+      <div class="section-title">주요 사양</div>
       <div class="spec-dashboard-grid">
         ${specGridHTML}
       </div>
@@ -1058,11 +1069,10 @@ function showPerformancePanel(component) {
       .spec-header {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 0;
         margin-bottom: 8px;
       }
-      .spec-icon { font-size: 1.2rem; }
-      .spec-label { font-size: 0.8rem; color: #aaa; font-weight: 500; }
+      .spec-label { font-size: 0.9rem; color: #b5beca; font-weight: 700; }
       .spec-value { 
         font-size: 1.1rem; 
         font-weight: 700; 
@@ -1530,8 +1540,14 @@ function updateSelectedParts() {
   const totalLine = document.createElement('div');
   totalLine.className = 'file-item total-line';
   totalLine.innerHTML = `
-    <span style="color: var(--color-success);">Total:</span>
-    <span style="color: var(--color-link); margin-left: 8px;">${calculateTotal()}</span>
+    <div class="total-left">
+      <span class="total-label">Total:</span>
+      <span class="total-value">${calculateTotal()}</span>
+    </div>
+    <button class="total-print-btn" title="출력">
+      <span class="print-icon" aria-hidden="true">🖨</span>
+      <span class="print-text">출력</span>
+    </button>
   `;
   selectedPartsContainer.appendChild(totalLine);
 }

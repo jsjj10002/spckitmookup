@@ -93,8 +93,10 @@ button {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
-  padding: var(--spacing-sm);
-  border-radius: 6px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  min-height: 56px;
+  min-width: 56px;
   transition: background 0.2s;
 }
 
@@ -129,6 +131,11 @@ button {
 .icon-chevron,
 .icon-external {
   flex-shrink: 0;
+}
+
+.breadcrumb-btn .icon-bolt {
+  width: 36px;
+  height: 36px;
 }
 
 /* 메인 콘텐츠 */
@@ -317,6 +324,7 @@ button {
   outline: none;
   min-height: 80px;
   max-height: 400px;
+  overflow-y: hidden;
 }
 
 .chat-textarea::placeholder {
@@ -675,9 +683,9 @@ button {
 
 .slot-purchase-btn {
   padding: 5px 16.5px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border);
   border-radius: 5px;
   font-size: 10px;
   font-weight: 600;
@@ -689,9 +697,9 @@ button {
 }
 
 .slot-purchase-btn:hover {
-  background: linear-gradient(135deg, #5568d3 0%, #6a3f8e 100%);
+  background: rgba(255, 255, 255, 0.1);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
 }
 
 .slot-purchase-btn:active {
@@ -813,6 +821,54 @@ button {
   padding-top: 10px;
   border-top: 1px solid var(--color-border);
   font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.total-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.total-label {
+  color: var(--color-success);
+}
+
+.total-value {
+  color: var(--color-link);
+  font-weight: 700;
+}
+
+.total-print-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.total-print-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.total-print-btn:active {
+  transform: translateY(0);
+}
+
+.print-icon {
+  font-size: 13px;
+  line-height: 1;
 }
 
 .line-numbers {
@@ -1063,7 +1119,7 @@ button {
 }
 
 #performance-panel {
-  position: relative;
+  position: fixed;
   width: min(960px, 100%);
   max-height: calc(100vh - 160px);
   background: rgba(10, 12, 18, 0.98);
@@ -1077,6 +1133,7 @@ button {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  z-index: 1001;
 }
 
 #performance-panel.visible {
