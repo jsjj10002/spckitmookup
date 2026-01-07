@@ -11,6 +11,7 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 const selectedPartsContainer = document.getElementById('selected-parts-panel'); // 선택된 부품 (에디터 영역)
 const fileList = document.getElementById('file-list'); // 추천 부품 (파일 트리)
+const resetBtn = document.getElementById('reset-btn'); // 초기화 버튼
 const homeBtn = document.getElementById('home-btn');
 const startBuildBtn = document.getElementById('start-build-btn');
 const nextStepBtn = document.getElementById('next-step-btn');
@@ -109,6 +110,11 @@ function init() {
   // Next Step 버튼 리스너
   if (nextStepBtn) {
     nextStepBtn.addEventListener('click', handleNextStep);
+  }
+
+  // 초기화 버튼 이벤트 리스너
+  if (resetBtn) {
+    resetBtn.addEventListener('click', resetAllParts);
   }
 }
 
@@ -1444,6 +1450,16 @@ function updateSelectedParts() {
       price.textContent = part.price;
       header.appendChild(price);
 
+      const purchaseBtn = document.createElement('button');
+      purchaseBtn.className = 'slot-purchase-btn';
+      purchaseBtn.textContent = '구매하기';
+      purchaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // TODO: 구매 페이지로 이동 또는 구매 로직 구현
+        alert(`${part.name} 구매 페이지로 이동합니다.`);
+      });
+      header.appendChild(purchaseBtn);
+
       const removeBtn = document.createElement('button');
       removeBtn.className = 'slot-remove';
       removeBtn.textContent = '×';
@@ -1463,6 +1479,39 @@ function updateSelectedParts() {
       name.className = 'slot-name';
       name.textContent = part.name;
       body.appendChild(name);
+
+      // 수량 조절 버튼
+      const quantityControl = document.createElement('div');
+      quantityControl.className = 'quantity-control';
+
+      const decreaseBtn = document.createElement('button');
+      decreaseBtn.className = 'quantity-btn';
+      decreaseBtn.textContent = '−';
+      decreaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentQty = parseInt(quantityNum.textContent);
+        if (currentQty > 1) {
+          quantityNum.textContent = currentQty - 1;
+        }
+      });
+
+      const quantityNum = document.createElement('span');
+      quantityNum.className = 'quantity-num';
+      quantityNum.textContent = part.quantity || '1';
+
+      const increaseBtn = document.createElement('button');
+      increaseBtn.className = 'quantity-btn';
+      increaseBtn.textContent = '+';
+      increaseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentQty = parseInt(quantityNum.textContent);
+        quantityNum.textContent = currentQty + 1;
+      });
+
+      quantityControl.appendChild(decreaseBtn);
+      quantityControl.appendChild(quantityNum);
+      quantityControl.appendChild(increaseBtn);
+      body.appendChild(quantityControl);
     } else {
       const placeholder = document.createElement('div');
       placeholder.className = 'slot-placeholder';
@@ -1603,6 +1652,35 @@ function removePart(index) {
   selectedParts.splice(index, 1);
   updateSelectedParts();
   saveState();
+}
+
+/**
+ * 모든 선택된 부품 초기화
+ */
+function resetAllParts() {
+  if (selectedParts.length === 0) {
+    alert('선택된 부품이 없습니다.');
+    return;
+  }
+
+  if (confirm('선택된 모든 부품을 초기화하시겠습니까?')) {
+    // 모든 추천 카드 복원
+    selectedParts.forEach(part => {
+      restoreRecommendationCard(part);
+    });
+
+    // 선택된 부품 배열 초기화
+    selectedParts.length = 0;
+
+    // UI 업데이트
+    updateSelectedParts();
+
+    // 상태 저장
+    saveState();
+
+    // 사용자에게 피드백
+    addMessageWithTyping('선택된 부품이 모두 초기화되었습니다.', 'ai');
+  }
 }
 
 /**
