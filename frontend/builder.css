@@ -578,6 +578,32 @@ button {
   height: 34px;
   background: var(--color-bg-secondary);
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+}
+
+.reset-btn {
+  padding: 5px 12px;
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(255, 59, 48, 0.3);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reset-btn:hover {
+  background: rgba(255, 59, 48, 0.25);
+  border-color: rgba(255, 59, 48, 0.5);
+  transform: translateY(-1px);
+}
+
+.reset-btn:active {
+  transform: translateY(0);
 }
 
 .editor-content {
@@ -638,13 +664,112 @@ button {
   font-weight: 700;
   color: var(--color-text-primary);
   font-size: 13px;
+  flex: 1;
 }
 
 .slot-price {
-  margin-left: auto;
   color: var(--color-link);
   font-weight: 700;
   font-size: 12px;
+}
+
+.slot-purchase-btn {
+  padding: 5px 16.5px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  line-height: 1;
+  margin-right: -3px;
+}
+
+.slot-purchase-btn:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #6a3f8e 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(102, 126, 234, 0.3);
+}
+
+.slot-purchase-btn:active {
+  transform: translateY(0);
+}
+
+.slot-remove {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 6px;
+}
+
+.slot-remove:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text-primary);
+}
+
+.slot-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.slot-name {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.4;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  padding: 0px 2px;
+  margin-right: 24px;
+}
+
+.quantity-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.quantity-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-primary);
+}
+
+.quantity-num {
+  min-width: 16px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .slot-remove {
