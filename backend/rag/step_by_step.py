@@ -144,6 +144,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # from .retriever import PCComponentRetriever
 # from ..modules.compatibility import CompatibilityEngine
 
+# 다나와 데이터 서비스
+try:
+    from modules.danawa import DanawaService
+    _danawa_service = DanawaService()
+except ImportError:
+    _danawa_service = None
+    logger.warning("DanawaService를 로드할 수 없습니다. 다나와 URL 기능이 비활성화됩니다.")
+
 
 # ============================================================================
 # 상수 및 열거형
@@ -325,6 +333,8 @@ class CandidateComponent(BaseModel):
     specs: Dict[str, Any] = Field(default_factory=dict)
     hashtags: List[str] = Field(default_factory=list)  # 새로 추가
     representative_specs: Dict[str, Any] = Field(default_factory=dict)  # 새로 추가
+    danawa_url: Optional[str] = None  # 다나와 제품 페이지 URL
+    image_url: Optional[str] = None  # 제품 이미지 URL
 
 
 class StepContext(BaseModel):
@@ -498,9 +508,14 @@ class StepByStepRAGPipeline:
         query = self._build_search_query(session, step, category)
         
         # 후보 검색 (RAG)
+        # [Fix] DB category mapping (gpu -> vga)
+        search_category = category
+        if category == "gpu":
+            search_category = "vga"
+
         candidates = self._search_candidates(
             query=query,
-            category=category,
+            category=search_category,
             budget=allocated_budget,
             context=session.context,
             top_k=top_k * 2,  # 필터링 고려하여 더 많이 검색
@@ -588,6 +603,26 @@ class StepByStepRAGPipeline:
         self._update_context(session, selection)
         
         logger.info(f"부품 선택: {session_id}, 단계 {step}, {component_id}")
+        
+        return session
+
+    def skip_step(
+        self,
+        session_id: str,
+        step: int,
+    ) -> SelectionSession:
+        """
+        단계 건너뛰기
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
+            
+        # 선택 없이 단계만 증가
+        session.current_step = step + 1
+        session.updated_at = datetime.now()
+        
+        logger.info(f"단계 건너뛰기: {session_id}, 단계 {step}")
         
         return session
     
@@ -722,7 +757,7 @@ class StepByStepRAGPipeline:
                 
             results = self.retriever.retrieve(
                 query=query,
-                top_k=top_k,
+                top_k=top_k * 3, # 필터링을 고려하여 3배수 조회
                 category=category,
                 filters=filters
             )
@@ -759,6 +794,29 @@ class StepByStepRAGPipeline:
                 specs=metadata
             )
             
+            # 다나와 URL 및 가격 설정
+            if _danawa_service:
+                # 1차: ID 기반 조회 시도
+                danawa_info = None
+                if comp_id:
+                    danawa_info = _danawa_service.get_product_info(comp_id, category)
+                
+                # 2차: ID로 못 찾으면 이름 기반 fuzzy 매칭
+                if not danawa_info:
+                    comp_name = metadata.get("name", metadata.get("field_1", ""))
+                    danawa_info = _danawa_service.get_product_by_name_with_url(comp_name, category)
+                
+                # 다나와 정보가 있으면 적용
+                if danawa_info:
+                    candidate.danawa_url = danawa_info.get("danawa_url")
+                    candidate.image_url = danawa_info.get("image_url")
+                    # 기존 가격이 0이면 다나와 가격 사용
+                    if price == 0 and danawa_info.get("price"):
+                        candidate.price = danawa_info.get("price")
+                elif comp_id:
+                    # fallback: ID로 URL만 생성
+                    candidate.danawa_url = _danawa_service.get_danawa_url(comp_id)
+            
             # 해시태그 생성
             candidate.hashtags = self._generate_hashtags(candidate, category)
             
@@ -775,8 +833,31 @@ class StepByStepRAGPipeline:
                 seen_ids.add(c.component_id)
                 unique_candidates.append(c)
         candidates = unique_candidates
-            
-        return candidates
+        
+        # 가격 필터링: 유효한 가격이 있는 제품만 표시
+        # 카테고리별 최소 가격 기준 (비정상적으로 낮은 가격 제외)
+        MIN_PRICE_BY_CATEGORY = {
+            "cpu": 30000,       # CPU 최소 3만원
+            "gpu": 50000,       # GPU 최소 5만원  
+            "motherboard": 50000, # 메인보드 최소 5만원
+            "memory": 20000,    # 메모리 최소 2만원
+            "storage": 20000,   # 저장장치 최소 2만원
+            "psu": 30000,       # 파워 최소 3만원
+            "case": 20000,      # 케이스 최소 2만원
+            "cooler": 10000,    # 쿨러 최소 1만원
+        }
+        min_price = MIN_PRICE_BY_CATEGORY.get(category, 10000)
+        
+        # 가격이 유효한 제품만 필터링
+        priced_candidates = [c for c in candidates if c.price and c.price >= min_price]
+        
+        # 가격 있는 제품이 있으면 그것만 반환, 없으면 원래 리스트 반환
+        if priced_candidates:
+            logger.info(f"가격 필터링 적용: {len(candidates)}개 -> {len(priced_candidates)}개")
+            return priced_candidates
+        else:
+            logger.warning(f"유효한 가격 정보가 있는 제품이 없습니다. 원래 목록 반환.")
+            return candidates
     
     def _filter_by_compatibility(
         self,

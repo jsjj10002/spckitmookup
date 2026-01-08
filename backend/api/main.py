@@ -109,6 +109,8 @@ class ComponentCandidate(BaseModel):
     hashtags: List[str] = Field(default_factory=list)
     representative_specs: Dict[str, Any] = Field(default_factory=dict)
     compatibility_status: str = Field("compatible", description="compatible, warning, incompatible")
+    danawa_url: Optional[str] = Field(None, description="다나와 제품 페이지 URL")
+    image_url: Optional[str] = Field(None, description="제품 이미지 URL")
 
 
 class StepResponse(BaseModel):
@@ -623,7 +625,9 @@ async def step_next(request: StepRequest):
                     specs=c.specs,
                     hashtags=getattr(c, "hashtags", []),
                     representative_specs=getattr(c, "representative_specs", {}),
-                    compatibility_status=getattr(c, "compatibility_status", "compatible")
+                    compatibility_status=getattr(c, "compatibility_status", "compatible"),
+                    danawa_url=getattr(c, "danawa_url", None),
+                    image_url=getattr(c, "image_url", None)
                 )
                 for c in step_result.candidates
             ]
@@ -674,6 +678,12 @@ async def step_next(request: StepRequest):
                 
                 logger.info(f"부품 선택: step={current_step_for_selection}, id={request.selected_component_id}")
             
+            else:
+                # [Fix] 선택 없이 건너뛰기 (Skip)
+                current_step_for_selection = request.current_step if request.current_step >= 1 else session.current_step
+                step_pipeline.skip_step(session_id=session_id, step=current_step_for_selection)
+                logger.info(f"단계 건너뛰기: step={current_step_for_selection}")
+            
             # [Fix] Re-fetch session after selection to get updated current_step
             session = step_pipeline.get_session(session_id)
             next_step = session.current_step
@@ -704,7 +714,9 @@ async def step_next(request: StepRequest):
                     specs=c.specs,
                     hashtags=getattr(c, "hashtags", []),
                     representative_specs=getattr(c, "representative_specs", {}),
-                    compatibility_status=getattr(c, "compatibility_status", "compatible")
+                    compatibility_status=getattr(c, "compatibility_status", "compatible"),
+                    danawa_url=getattr(c, "danawa_url", None),
+                    image_url=getattr(c, "image_url", None)
                 )
                 for c in step_result.candidates
             ]

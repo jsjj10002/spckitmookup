@@ -92,6 +92,7 @@ export async function getPCRecommendation(userMessage, options = {}) {
  * 가격 문자열에서 정수만 추출합니다.
  */
 export function extractPrice(priceStr) {
+  if (typeof priceStr === 'number') return priceStr;
   if (!priceStr || typeof priceStr !== 'string') {
     return 0;
   }

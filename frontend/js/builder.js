@@ -3,7 +3,7 @@
  * 채팅, 부품 추천, 선택 기능 등을 관리한다
  */
 
-import { getPCRecommendation, extractPrice, formatPrice } from './api.js';
+import { getPCRecommendation, extractPrice, formatPrice, getStepCandidates, API_BASE_URL } from './api.js';
 
 // DOM 요소
 const chatMessages = document.getElementById('chat-messages');
@@ -532,23 +532,19 @@ async function handleSkipStep() {
     await addMessageWithTyping(`이 단계를 건너뛰고 다음 부품으로 넘어갑니다.`, 'ai');
     chatHistory.push({ role: 'model', text: '이 단계를 건너뛰었습니다.' });
 
-    // 선택 없이 다음 단계 요청
-    const stepResponse = await fetch(`${API_BASE_URL}/step/next`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        session_id: stepSessionId,
-        query: '건너뛰기',
-        current_step: currentStep,
-        selected_component_id: null  // 선택 없음
-      })
-    }).then(res => res.json());
+    // 선택 없이 다음 단계 요청 (getStepCandidates 사용)
+    const stepResponse = await getStepCandidates({
+      session_id: stepSessionId,
+      query: '건너뛰기',
+      current_step: currentStep,
+      selected_component_id: null  // 선택 없음
+    });
 
     currentStep = stepResponse.step;
 
     if (stepResponse.is_final) {
       isInStepMode = false;
-      await addMessageWithTyping(`PC 구성이 완료되었습니다! 총 ${stepResponse.total_price.toLocaleString('ko-KR')}원입니다.`, 'ai');
+      await addMessageWithTyping(`PC 구성이 완료되었습니다! 총 ${formatPrice(stepResponse.total_price)}입니다.`, 'ai');
     } else {
       await addMessageWithTyping(stepResponse.analysis || '다음 부품을 선택해주세요.', 'ai');
       displayRecommendations(stepResponse.candidates);
@@ -764,13 +760,21 @@ function displayRecommendations(components) {
         </div>
         <h3>추천 가능한 부품이 없습니다</h3>
         <p>선택하신 사양과 호환되는 부품을 찾지 못했습니다.<br>
-           용도에 따라 이 카테고리를 건너뛸 수 있습니다.<br>
            (예: 내장 그래픽 사용 시 GPU 생략 가능)</p>
+        <p class="auto-skip-msg" style="color: #4ade80; margin-top: 10px; font-weight: bold;">
+          잠시 후 자동으로 다음 단계로 이동합니다...
+        </p>
         <button class="skip-step-btn" onclick="handleSkipStep()">
-          이 단계 건너뛰기
+          지금 건너뛰기
         </button>
       </div>
     `;
+
+    // Auto-Skip (2초 후)
+    setTimeout(() => {
+      handleSkipStep();
+    }, 2000);
+
     return;
   }
 
@@ -825,8 +829,8 @@ function createRecommendationCard(component) {
   const category = (component.category || '').toLowerCase();
   let componentImage = null;
 
-  if (component.image || component.imageUrl) {
-    componentImage = component.image || component.imageUrl;
+  if (component.image_url || component.image || component.imageUrl) {
+    componentImage = component.image_url || component.image || component.imageUrl;
   } else if (category.includes('cpu')) {
     componentImage = 'images/computer/cpu.jpg';
   } else if (category.includes('memory') || category.includes('ram')) {
@@ -1521,7 +1525,7 @@ function updateSelectedParts() {
     if (part) {
       const price = document.createElement('span');
       price.className = 'slot-price';
-      price.textContent = part.price;
+      price.textContent = formatPrice(part.price);
       header.appendChild(price);
 
       const purchaseBtn = document.createElement('button');
@@ -1529,8 +1533,19 @@ function updateSelectedParts() {
       purchaseBtn.textContent = '구매하기';
       purchaseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        // TODO: 구매 페이지로 이동 또는 구매 로직 구현
-        alert(`${part.name} 구매 페이지로 이동합니다.`);
+        // 다나와 URL이 있으면 다나와 페이지로 이동
+        const danawaUrl = part.danawa_url || part.danawaUrl;
+        if (danawaUrl) {
+          window.open(danawaUrl, '_blank', 'noopener,noreferrer');
+        } else {
+          // 다나와 URL이 없으면 component_id를 이용해 기본 URL 생성
+          const productId = part.id || part.component_id;
+          if (productId) {
+            window.open(`https://prod.danawa.com/info/?pcode=${productId}`, '_blank', 'noopener,noreferrer');
+          } else {
+            alert(`${part.name}에 대한 구매 링크가 없습니다.`);
+          }
+        }
       });
       header.appendChild(purchaseBtn);
 
@@ -1563,23 +1578,30 @@ function updateSelectedParts() {
       decreaseBtn.textContent = '−';
       decreaseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const currentQty = parseInt(quantityNum.textContent);
+        let currentQty = part.quantity || 1;
         if (currentQty > 1) {
-          quantityNum.textContent = currentQty - 1;
+          part.quantity = currentQty - 1;
+          quantityNum.textContent = part.quantity;
+          document.querySelector('.total-value').textContent = calculateTotal();
+          saveState();
         }
       });
 
       const quantityNum = document.createElement('span');
       quantityNum.className = 'quantity-num';
-      quantityNum.textContent = part.quantity || '1';
+      if (!part.quantity) part.quantity = 1;
+      quantityNum.textContent = part.quantity;
 
       const increaseBtn = document.createElement('button');
       increaseBtn.className = 'quantity-btn';
       increaseBtn.textContent = '+';
       increaseBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const currentQty = parseInt(quantityNum.textContent);
-        quantityNum.textContent = currentQty + 1;
+        let currentQty = part.quantity || 1;
+        part.quantity = currentQty + 1;
+        quantityNum.textContent = part.quantity;
+        document.querySelector('.total-value').textContent = calculateTotal();
+        saveState();
       });
 
       quantityControl.appendChild(decreaseBtn);
@@ -1615,6 +1637,8 @@ function updateSelectedParts() {
   `;
   selectedPartsContainer.appendChild(totalLine);
 }
+
+
 
 /**
  * 파일 아이템 생성 (파일 트리 스타일 - 원본 디자인)
@@ -1768,7 +1792,9 @@ function resetAllParts() {
  */
 function calculateTotal() {
   const total = selectedParts.reduce((sum, part) => {
-    return sum + extractPrice(part.price);
+    const price = extractPrice(part.price);
+    const qty = part.quantity || 1;
+    return sum + (price * qty);
   }, 0);
 
   return formatPrice(total);
