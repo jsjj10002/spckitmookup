@@ -766,6 +766,15 @@ class StepByStepRAGPipeline:
             candidate.representative_specs = self._extract_representative_specs(candidate, category)
             
             candidates.append(candidate)
+        
+        # 중복 제거: component_id 기준
+        seen_ids = set()
+        unique_candidates = []
+        for c in candidates:
+            if c.component_id not in seen_ids:
+                seen_ids.add(c.component_id)
+                unique_candidates.append(c)
+        candidates = unique_candidates
             
         return candidates
     
@@ -876,6 +885,50 @@ class StepByStepRAGPipeline:
             "current_step": session.current_step,
             "is_complete": session.current_step > 8,
         }
+    
+    def deselect_component(
+        self,
+        session_id: str,
+        step: int,
+    ) -> SelectionSession:
+        """
+        특정 단계의 선택을 취소하고 해당 단계로 되돌림
+        
+        Args:
+            session_id: 세션 ID
+            step: 취소할 단계 번호
+            
+        Returns:
+            업데이트된 세션
+        """
+        session = self._sessions.get(session_id)
+        if not session:
+            raise ValueError(f"세션을 찾을 수 없습니다: {session_id}")
+        
+        # 해당 단계 이후의 모든 선택 제거
+        session.selections = [s for s in session.selections if s.step < step]
+        session.current_step = step
+        session.updated_at = datetime.now()
+        
+        # 컨텍스트 재계산
+        self._recalculate_context(session)
+        
+        logger.info(f"부품 선택 취소: {session_id}, 단계 {step} 이후 초기화")
+        return session
+    
+    def _recalculate_context(self, session: SelectionSession):
+        """
+        선택된 부품들로부터 컨텍스트 재계산
+        """
+        # 컨텍스트 초기화
+        session.context.socket_requirement = None
+        session.context.memory_type_requirement = None
+        session.context.form_factor_requirement = None
+        session.context.total_tdp = 0
+        
+        # 각 선택에 대해 컨텍스트 업데이트
+        for selection in session.selections:
+            self._update_context(session, selection)
     
     def _generate_hashtags(self, component: CandidateComponent, category: str) -> List[str]:
         """해시태그 생성 (기본값 - LLM 실패 시 사용)"""

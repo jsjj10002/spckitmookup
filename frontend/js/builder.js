@@ -116,6 +116,9 @@ function init() {
   if (resetBtn) {
     resetBtn.addEventListener('click', resetAllParts);
   }
+
+  // handleSkipStep을 전역으로 노출 (HTML onclick에서 호출 가능)
+  window.handleSkipStep = handleSkipStep;
 }
 
 /**
@@ -335,7 +338,8 @@ async function handleSendMessage(message) {
 
         // 가이드 출력
         if (stepResponse.category_description) {
-          let guideMsg = `**${stepResponse.step_name || stepResponse.category || '부품'}**\n${stepResponse.category_description}`;
+          const categoryTitle = stepResponse.step_name || stepResponse.category_name || stepResponse.category || '부품';
+          let guideMsg = `**${categoryTitle}**\n${stepResponse.category_description}`;
           if (stepResponse.spec_meanings && Object.keys(stepResponse.spec_meanings).length > 0) {
             guideMsg += '\n\n**주요 스펙 가이드:**\n';
             guideMsg += Object.entries(stepResponse.spec_meanings)
@@ -502,6 +506,49 @@ async function handleNextStep() {
   await loadStageComponents(nextStage);
 }
 
+/**
+ * 현재 단계 건너뛰기 (추천 부품이 없을 때)
+ * Step-by-step 모드에서 선택 없이 다음 단계로 진행
+ */
+async function handleSkipStep() {
+  if (!isInStepMode || !stepSessionId) {
+    console.warn('[SKIP] Step 모드가 아니거나 세션이 없음');
+    return;
+  }
+
+  try {
+    await addMessageWithTyping(`이 단계를 건너뛰고 다음 부품으로 넘어갑니다.`, 'ai');
+    chatHistory.push({ role: 'model', text: '이 단계를 건너뛰었습니다.' });
+
+    // 선택 없이 다음 단계 요청
+    const stepResponse = await fetch(`${API_BASE_URL}/step/next`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: stepSessionId,
+        query: '건너뛰기',
+        current_step: currentStep,
+        selected_component_id: null  // 선택 없음
+      })
+    }).then(res => res.json());
+
+    currentStep = stepResponse.step;
+
+    if (stepResponse.is_final) {
+      isInStepMode = false;
+      await addMessageWithTyping(`PC 구성이 완료되었습니다! 총 ${stepResponse.total_price.toLocaleString('ko-KR')}원입니다.`, 'ai');
+    } else {
+      await addMessageWithTyping(stepResponse.analysis || '다음 부품을 선택해주세요.', 'ai');
+      displayRecommendations(stepResponse.candidates);
+    }
+
+    saveState();
+
+  } catch (error) {
+    console.error('[SKIP ERROR]', error);
+    addMessage('단계 건너뛰기 중 오류가 발생했습니다.', 'error');
+  }
+}
 
 /**
  * 채팅 메시지 추가
@@ -695,7 +742,23 @@ function displayRecommendations(components) {
   }
 
   if (!components || components.length === 0) {
-    fileList.innerHTML = '<div class="file-item">추천 부품이 없습니다</div>';
+    fileList.innerHTML = `
+      <div class="empty-recommendation">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 8v4M12 16h.01"/>
+          </svg>
+        </div>
+        <h3>추천 가능한 부품이 없습니다</h3>
+        <p>선택하신 사양과 호환되는 부품을 찾지 못했습니다.<br>
+           용도에 따라 이 카테고리를 건너뛸 수 있습니다.<br>
+           (예: 내장 그래픽 사용 시 GPU 생략 가능)</p>
+        <button class="skip-step-btn" onclick="handleSkipStep()">
+          이 단계 건너뛰기
+        </button>
+      </div>
+    `;
     return;
   }
 
@@ -1350,7 +1413,8 @@ function handleCardClick(e, cardElement, component) {
 
         // 1. 카테고리 설명 메시지 출력 (다음 단계 진입 시, 마지막 단계가 아닐 경우)
         if (!stepResponse.is_final_step && stepResponse.category_description) {
-          let guideMsg = `**${stepResponse.category_name || stepResponse.category}**\n${stepResponse.category_description}`;
+          const categoryTitle = stepResponse.step_name || stepResponse.category_name || stepResponse.category || '부품';
+          let guideMsg = `**${categoryTitle}**\n${stepResponse.category_description}`;
 
           if (stepResponse.spec_meanings && Object.keys(stepResponse.spec_meanings).length > 0) {
             guideMsg += '\n\n**주요 스펙 가이드:**\n';
