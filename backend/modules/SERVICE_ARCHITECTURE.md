@@ -119,35 +119,36 @@
 
 ---
 
-### 3.2 멀티 에이전트 시스템 [뼈대]
+### 3.2 멀티 에이전트 시스템 [구현 중]
 
 **파일**: `modules/multi_agent/`
 
-**현재 상태**: 클래스 구조만 정의됨 (실제 CREWai 연동 필요)
+**현재 상태**: CREWai 연동 완료, 에이전트 분리 구조 설계됨
+
+#### 에이전트 분리 구조
+
+| 에이전트 그룹 | 포함 에이전트 | 역할 |
+|--------------|---------------|------|
+| **채팅 에이전트** | RequirementAnalyzer, RecommendationWriter | 사용자 대화 처리, 결과 작성 |
+| **추천 에이전트** | BudgetPlanner, ComponentSelector, CompatibilityChecker | 부품 선택, 검증, 외부 모듈 연동 |
+
+#### 외부 모듈 연동
+
+추천 에이전트는 다음 외부 모듈과 연동됨:
+- `backend/data/price_prediction/` - 가격 예측치 제공
+- `backend/data/compatibility/` - 호환성 검사 데이터
+- `backend/data/recommendation/` - 시너지 기반 맞춤 추천
 
 #### Main Task
 
 | # | 작업 | 설명 | 예상 시간 |
 |---|------|------|----------|
-| 1 | CREWai 연동 | `crewai` 라이브러리 실제 연결 | 1일 |
-| 2 | 에이전트 구현 | 5개 에이전트 각각의 실제 로직 | 3일 |
-| 3 | Task 정의 | 에이전트별 Task 체이닝 | 1일 |
-| 4 | RAG 연동 | 부품 검색 에이전트에 RAG 연결 | 1일 |
-| 5 | 테스트 | 전체 플로우 통합 테스트 | 1일 |
-
-**핵심 구현 포인트**:
-```python
-# orchestrator.py - 실제 구현 필요한 부분
-def run(self, request: UserRequest) -> RecommendationResult:
-    # TODO: CREWai Crew 생성 및 kickoff
-    crew = Crew(
-        agents=[self.agents[name] for name in self.agents],
-        tasks=[...],
-        process=Process.sequential
-    )
-    result = crew.kickoff(inputs=request.model_dump())
-    return self._parse_result(result)
-```
+| 1 | CREWai 연동 | `crewai` 라이브러리 실제 연결 | **완료** |
+| 2 | 에이전트 구현 | 4개 에이전트 클래스 정의 | **완료** |
+| 3 | 도구(Tools) 정의 | SearchPartsTool, CompatibilityCheckTool 등 | **완료** |
+| 4 | 가격예측 모듈 연동 | ComponentSelector에 가격 예측 통합 | 진행 중 |
+| 5 | 추천엔진 연동 | 시너지 기반 맞춤 추천 통합 | 대기 |
+| 6 | 테스트 | 전체 플로우 통합 테스트 | 대기 |
 
 ---
 

@@ -503,6 +503,44 @@ async def get_session_summary(session_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"요약 조회 실패: {str(e)}")
 
 
+@app.delete("/step/{session_id}/select/{step}")
+async def deselect_component(session_id: str, step: int) -> Dict[str, Any]:
+    """
+    특정 단계의 선택을 취소하고 해당 단계로 되돌림
+    
+    해당 단계 및 이후 선택된 모든 부품이 제거됩니다.
+    """
+    if step_pipeline is None:
+        raise HTTPException(status_code=503, detail="Step-by-Step 파이프라인이 초기화되지 않았습니다.")
+    
+    try:
+        session = step_pipeline.deselect_component(session_id=session_id, step=step)
+        
+        # 해당 단계의 후보를 다시 조회하여 반환
+        step_result = step_pipeline.get_step_candidates(
+            session_id=session_id,
+            step=step,
+            top_k=5
+        )
+        
+        category_info = CATEGORY_INFO.get(step_result.category, {})
+        
+        return {
+            "session_id": session_id,
+            "step": step,
+            "category": step_result.category,
+            "category_name": category_info.get("name", step_result.category),
+            "category_description": category_info.get("description", ""),
+            "candidates": [c.model_dump() for c in step_result.candidates],
+            "message": f"단계 {step} 이후의 선택이 취소되었습니다."
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"선택 취소 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"선택 취소 실패: {str(e)}")
+
 # =============================================================================
 # Multi-Agent API 엔드포인트
 # =============================================================================

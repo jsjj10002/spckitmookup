@@ -1449,3 +1449,58 @@ button {
 .hashtag:nth-child(4n):hover {
   background: rgba(255, 100, 150, 0.3);
 }
+
+/* 빈 추천 상태 UI */
+.empty-recommendation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  gap: 16px;
+}
+
+.empty-recommendation .empty-icon {
+  color: var(--color-text-muted);
+  opacity: 0.6;
+}
+
+.empty-recommendation h3 {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty-recommendation p {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 320px;
+  margin: 0;
+}
+
+.skip-step-btn {
+  background: rgba(255, 200, 60, 0.15);
+  color: #ffe085;
+  border: 1px solid rgba(255, 200, 60, 0.3);
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.skip-step-btn:hover {
+  background: rgba(255, 200, 60, 0.25);
+  border-color: rgba(255, 200, 60, 0.5);
+  transform: translateY(-1px);
+}
+
+.skip-step-btn:active {
+  transform: translateY(0);
+}
