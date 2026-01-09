@@ -26,3 +26,6 @@ steps:
 images:
   - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/my-repo/spckit-backend:$COMMIT_SHA'
   - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/my-repo/spckit-backend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
