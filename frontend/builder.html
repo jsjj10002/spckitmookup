@@ -1,13 +1,15 @@
 <!doctype html>
 <html lang="ko">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Spckit AI: PC Builder</title>
   <link rel="icon" type="image/svg+xml" href="./images/spckit-logo.svg">
   <link rel="stylesheet" href="./builder.css">
-  <script type="module" src="./js/builder.js" defer></script>
+  <script type="module" src="./js/builder.js"></script>
 </head>
+
 <body>
   <!-- 전체 컨테이너 -->
   <div class="app-container">
@@ -15,20 +17,21 @@
     <header class="header">
       <div class="breadcrumb">
         <button class="breadcrumb-btn" id="home-btn">
-          <img src="images/spckit-logo.svg" alt="Spckit" class="icon-bolt" style="width: 60px; height: 60px; object-fit: contain;" />
+          <img src="images/spckit-logo.svg" alt="Spckit" class="icon-bolt"
+            style="width: 60px; height: 60px; object-fit: contain;" />
         </button>
         <span class="separator">/</span>
         <button class="breadcrumb-btn avatar-btn">
           <img src="./images/mingyu.png" alt="User" class="avatar">
           <svg class="icon-chevron" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M4 6l4 4 4-4"/>
+            <path d="M4 6l4 4 4-4" />
           </svg>
         </button>
         <span class="separator">/</span>
         <div class="breadcrumb-title">
           <span>PC Build Recommendation</span>
           <svg class="icon-external" width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-            <path d="M11 3v8M3 11h8"/>
+            <path d="M11 3v8M3 11h8" />
           </svg>
         </div>
       </div>
@@ -53,16 +56,19 @@
 
           <!-- 입력 박스 -->
           <div class="input-container">
-            <textarea class="chat-textarea" id="chat-input" placeholder="PC 부품 추천을 받으려면 메시지를 입력하세요..." rows="3"></textarea>
+            <textarea class="chat-textarea" id="chat-input" placeholder="PC 부품 추천을 받으려면 메시지를 입력하세요..."
+              rows="3"></textarea>
             <div class="input-actions">
               <button class="action-btn attach-btn">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                  <path d="M8 3v10M3 8h10"/>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round">
+                  <path d="M8 3v10M3 8h10" />
                 </svg>
               </button>
               <div class="action-group">
                 <button class="pill-btn">
-                  <img src="./images/effect1.png" alt="Select" style="width: 16px; height: 16px; margin-right: 4px; filter: brightness(0) invert(1);">
+                  <img src="./images/effect1.png" alt="Select"
+                    style="width: 16px; height: 16px; margin-right: 4px; filter: brightness(0) invert(1);">
                   Share
                 </button>
                 <!-- Plan 버튼을 Start Build 버튼으로 변경 -->
@@ -70,7 +76,7 @@
               </div>
               <button class="send-btn" id="send-btn">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="white">
-                  <path d="M2 2l12 6-12 6V9l8-1-8-1V2z"/>
+                  <path d="M2 2l12 6-12 6V9l8-1-8-1V2z" />
                 </svg>
               </button>
             </div>
@@ -109,4 +115,5 @@
     </div>
   </div>
 </body>
+
 </html>
