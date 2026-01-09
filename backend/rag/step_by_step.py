@@ -163,10 +163,11 @@ class SelectionStep(int, Enum):
     MOTHERBOARD = 2
     MEMORY = 3
     GPU = 4
-    STORAGE = 5
-    PSU = 6
-    CPU_COOLER = 7
+    SSD = 5
+    HDD = 6
+    PSU = 7
     CASE = 8
+    CPU_COOLER = 9
 
 
 # 단계별 카테고리 매핑
@@ -175,7 +176,8 @@ STEP_CATEGORIES = {
     SelectionStep.MOTHERBOARD: "motherboard",
     SelectionStep.MEMORY: "memory",
     SelectionStep.GPU: "gpu",
-    SelectionStep.STORAGE: "storage",
+    SelectionStep.SSD: "ssd",
+    SelectionStep.HDD: "hdd",
     SelectionStep.PSU: "psu",
     SelectionStep.CASE: "case",
     SelectionStep.CPU_COOLER: "cpu_cooler",
@@ -188,7 +190,8 @@ BUDGET_ALLOCATION = {
         "motherboard": 0.12,
         "memory": 0.10,
         "gpu": 0.35,
-        "storage": 0.08,
+        "ssd": 0.08,
+        "hdd": 0.00, # Gaming often doesn't need HDD or low priority
         "psu": 0.05,
         "case": 0.05,
         "cpu_cooler": 0.03,
@@ -198,17 +201,20 @@ BUDGET_ALLOCATION = {
         "motherboard": 0.12,
         "memory": 0.18,
         "gpu": 0.15,
-        "storage": 0.12,
+        "ssd": 0.10,
+        "hdd": 0.02, # Workstation might need HDD
         "psu": 0.05,
         "case": 0.05,
         "cpu_cooler": 0.03,
     },
+
     "general": {
         "cpu": 0.25,
         "motherboard": 0.12,
         "memory": 0.12,
         "gpu": 0.25,
-        "storage": 0.10,
+        "ssd": 0.08,
+        "hdd": 0.02,
         "psu": 0.06,
         "case": 0.06,
         "cpu_cooler": 0.04,
@@ -261,15 +267,26 @@ CATEGORY_INFO = {
             "tdp": "소비 전력 (파워 용량 고려 필요)"
         }
     },
-    "storage": {
-        "name": "저장장치 (SSD/HDD)",
-        "description": "운영체제, 프로그램, 파일을 영구 저장하는 장치입니다. 속도와 용량을 고려해야 합니다.",
+    "ssd": {
+        "name": "SSD (Solid State Drive)",
+        "description": "운영체제와 프로그램을 저장하는 고속 저장장치입니다. 시스템 속도에 큰 영향을 미칩니다.",
         "key_specs": ["용량", "읽기/쓰기 속도", "인터페이스", "폼팩터"],
         "spec_meanings": {
-            "match_score": "용도 및 가성비",
+            "match_score": "가성비 및 용도 적합성",
             "capacity": "저장 공간 (GB/TB)",
             "read_speed": "데이터 읽기 속도 (MB/s)",
-            "interface": "연결 방식 (NVMe, SATA 등)"
+            "interface": "연결 방식 (NVMe, SATA)"
+        }
+    },
+    "hdd": {
+        "name": "HDD (Hard Disk Drive)",
+        "description": "데이터 보관용 대용량 저장장치입니다. 속도는 느리지만 용량 대비 가격이 저렴합니다.",
+        "key_specs": ["용량", "분당 회전수(RPM)", "기록 방식", "버퍼 용량"],
+        "spec_meanings": {
+            "match_score": "데이터 보관 목적 적합성",
+            "capacity": "저장 공간 (TB)",
+            "rpm": "회전 속도 (7200RPM, 5400RPM)",
+            "recording_method": "기록 방식 (CMR 추천)"
         }
     },
     "psu": {
@@ -508,10 +525,18 @@ class StepByStepRAGPipeline:
         query = self._build_search_query(session, step, category)
         
         # 후보 검색 (RAG)
-        # [Fix] DB category mapping (gpu -> vga)
+        # [Fix] DB category mapping aligned with pc_data_dump.sql
         search_category = category
+        extra_filters = {}
+
         if category == "gpu":
-            search_category = "vga"
+            search_category = "video_card"
+        elif category == "psu":
+            search_category = "power_supply"
+        elif category in ["ssd", "hdd"]:
+            search_category = "storage"
+            # extra_filters["type"] = category.upper() # [Fix] Removed to avoid complex filter error in ChromaDB
+            # The query string itself ("... ssd ..." or "... hdd ...") will handle the semantic filtering.
 
         candidates = self._search_candidates(
             query=query,
@@ -519,6 +544,7 @@ class StepByStepRAGPipeline:
             budget=allocated_budget,
             context=session.context,
             top_k=top_k * 2,  # 필터링 고려하여 더 많이 검색
+            extra_filters=extra_filters,
         )
         
         # 호환성 필터링 (결과가 없으면 완화하여 다시 시도)
@@ -723,6 +749,7 @@ class StepByStepRAGPipeline:
         budget: int,
         context: StepContext,
         top_k: int,
+        extra_filters: Optional[Dict[str, Any]] = None,
     ) -> List[CandidateComponent]:
         """
         RAG 검색으로 후보 부품 조회
@@ -754,6 +781,10 @@ class StepByStepRAGPipeline:
                 filters["socket"] = requirements["socket"]
             if "memory_type" in requirements:
                 filters["memory_type"] = requirements["memory_type"]
+            
+            # 추가 필터 적용 (예: storage type)
+            if extra_filters:
+                filters.update(extra_filters)
                 
             results = self.retriever.retrieve(
                 query=query,
@@ -795,16 +826,29 @@ class StepByStepRAGPipeline:
             )
             
             # 다나와 URL 및 가격 설정
+            danawa_info = None
+            
+            # [Fix] Danawa 서비스용 카테고리 매핑
+            danawa_category = category
+            if category == "video_card":
+                danawa_category = "gpu"
+            elif category == "power_supply":
+                danawa_category = "psu"
+            elif category == "storage":
+                if extra_filters and extra_filters.get("type") == "SSD":
+                    danawa_category = "ssd"
+                elif extra_filters and extra_filters.get("type") == "HDD":
+                    danawa_category = "hdd"
+
             if _danawa_service:
                 # 1차: ID 기반 조회 시도
-                danawa_info = None
                 if comp_id:
-                    danawa_info = _danawa_service.get_product_info(comp_id, category)
+                    danawa_info = _danawa_service.get_product_info(comp_id, danawa_category)
                 
                 # 2차: ID로 못 찾으면 이름 기반 fuzzy 매칭
                 if not danawa_info:
                     comp_name = metadata.get("name", metadata.get("field_1", ""))
-                    danawa_info = _danawa_service.get_product_by_name_with_url(comp_name, category)
+                    danawa_info = _danawa_service.get_product_by_name_with_url(comp_name, danawa_category)
                 
                 # 다나와 정보가 있으면 적용
                 if danawa_info:
@@ -815,6 +859,7 @@ class StepByStepRAGPipeline:
                         candidate.price = danawa_info.get("price")
                 elif comp_id:
                     # fallback: ID로 URL만 생성
+                    candidate.danawa_url = _danawa_service.get_danawa_url(comp_id)
                     candidate.danawa_url = _danawa_service.get_danawa_url(comp_id)
             
             # 해시태그 생성

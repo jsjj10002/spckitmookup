@@ -47,7 +47,9 @@ CATEGORY_CSV_MAP = {
     "gpu": "VGA.csv",
     "memory": "RAM.csv",
     "motherboard": "MBoard.csv",
-    "storage": "SSD.csv",
+    "ssd": "SSD.csv",
+    "hdd": "HDD.csv",
+    "storage": "SSD.csv", # 하위 호환성 유지
     "psu": "Power.csv",
     "case": "Case.csv",
     "cooler": "Cooler.csv",

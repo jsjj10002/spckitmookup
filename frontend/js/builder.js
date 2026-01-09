@@ -53,7 +53,7 @@ const CATEGORY_SLOTS = [
 // 빌드 상태 관리
 let currentPhase = 'requirements'; // 'requirements' | 'building'
 let buildStageIndex = 0;
-const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case', 'Cooler'];
+const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'HDD', 'Power', 'Case', 'Cooler'];
 
 // Step-by-Step 상태 관리
 let stepSessionId = null;  // Step-by-step 세션 ID
@@ -529,23 +529,30 @@ async function handleSkipStep() {
   }
 
   try {
-    await addMessageWithTyping(`이 단계를 건너뛰고 다음 부품으로 넘어갑니다.`, 'ai');
-    chatHistory.push({ role: 'model', text: '이 단계를 건너뛰었습니다.' });
-
-    // 선택 없이 다음 단계 요청 (getStepCandidates 사용)
+    // 1. 서버에 건너뛰기 요청 먼저 전송
     const stepResponse = await getStepCandidates({
       session_id: stepSessionId,
       query: '건너뛰기',
       current_step: currentStep,
-      selected_component_id: null  // 선택 없음
+      selected_component_id: null
     });
 
-    currentStep = stepResponse.step;
-
+    // 2. 응답에 따라 메시지 분기 처리
     if (stepResponse.is_final) {
       isInStepMode = false;
       await addMessageWithTyping(`PC 구성이 완료되었습니다! 총 ${formatPrice(stepResponse.total_price)}입니다.`, 'ai');
+
+      // Update Step
+      currentStep = stepResponse.step;
+      // Show Final Dashboard
+      showFinalDashboard();
+
     } else {
+      // 다음 단계가 있는 경우에만 건너뛰기 메시지 출력
+      await addMessageWithTyping(`이 단계를 건너뛰고 다음으로 넘어갑니다.`, 'ai');
+      chatHistory.push({ role: 'model', text: '이 단계를 건너뛰었습니다.' });
+
+      currentStep = stepResponse.step;
       await addMessageWithTyping(stepResponse.analysis || '다음 부품을 선택해주세요.', 'ai');
       displayRecommendations(stepResponse.candidates);
     }
@@ -806,6 +813,526 @@ function displayRecommendations(components) {
   });
 
   fileList.appendChild(list);
+
+  // 선택적 부품인 경우 '건너뛰기' 버튼 추가
+  // components 배열이 비어있지 않다고 가정 (위에서 체크함)
+  const currentCategorySlot = CATEGORY_SLOTS.find(s => components[0].category.toLowerCase().includes(s.match[0]));
+  const currentCategoryLabel = currentCategorySlot ? currentCategorySlot.label : components[0].category;
+
+  // 건너뛰기 허용 카테고리
+  const OPTIONAL_CATEGORIES = ['SSD', 'HDD', 'ODD', 'Cooler', 'Software', 'Case'];
+  const isOptional = OPTIONAL_CATEGORIES.some(cat =>
+    currentCategoryLabel.toLowerCase().includes(cat.toLowerCase()) ||
+    components[0].category.toLowerCase().includes(cat.toLowerCase())
+  );
+
+  if (isOptional) {
+    const skipBtnContainer = document.createElement('div');
+    skipBtnContainer.className = 'skip-section';
+    skipBtnContainer.style.marginTop = '20px';
+    skipBtnContainer.style.textAlign = 'center';
+    skipBtnContainer.innerHTML = `
+      <p style="color: var(--color-text-muted); font-size: 13px; margin-bottom: 10px;">
+        이 부품은 선택사항입니다.
+      </p>
+      <button class="skip-step-btn secondary" onclick="handleSkipStep()">
+        ${currentCategoryLabel} 건너뛰기
+      </button>
+    `;
+    fileList.appendChild(skipBtnContainer);
+  }
+}
+
+/**
+ * 최종 대시보드 표시
+ */
+/**
+ * 최종 대시보드 표시
+ */
+async function showFinalDashboard() {
+  const totalPrice = selectedParts.reduce((sum, p) => sum + extractPrice(p.price), 0);
+  const formattedTotalPrice = formatPrice(totalPrice);
+
+  // 전력 효율 계산 (파워 서플라이 등급 기반)
+  const psu = selectedParts.find(p => p.category.toLowerCase().includes('power') || p.category.toLowerCase().includes('psu') || p.category.toLowerCase().includes('파워'));
+  let efficiency = '중'; // 기본값 (80PLUS Standard/Bronze)
+
+  if (psu) {
+    const infoStr = (psu.name + ' ' + JSON.stringify(psu.specs || {})).toLowerCase();
+    if (infoStr.includes('titanium') || infoStr.includes('platinum')) {
+      efficiency = '상';
+    } else if (infoStr.includes('gold') || infoStr.includes('silver')) {
+      efficiency = '중';
+    } else if (infoStr.includes('bronze') || infoStr.includes('standard')) {
+      efficiency = '하';
+    } else {
+      efficiency = '하';
+    }
+  }
+
+  fileList.innerHTML = `
+    <div class="final-dashboard-container">
+      <div class="dashboard-header">
+        <h2 class="dashboard-title">나만의 PC 구성 완료</h2>
+        <div class="dashboard-actions">
+           <button class="action-btn primary" onclick="alert('저장되었습니다 (시뮬레이션)')">저장</button>
+        </div>
+      </div>
+      
+      <div class="dashboard-main-grid">
+        <!-- 최종 스펙 및 가격 (단독 표시) -->
+        <div class="dashboard-card specs-section">
+          <h3 class="card-title">최종 견적 스펙</h3>
+          
+          <div class="key-specs-grid">
+             <div class="key-spec-item">
+               <span class="ks-label">CPU 코어</span>
+               <span class="ks-value">${getSpecValue('cpu', ['코어', 'cores', 'core_count'], '-')}</span>
+             </div>
+             <div class="key-spec-item">
+               <span class="ks-label">VRAM</span>
+               <span class="ks-value">${getSpecValue('video_card', ['vram', 'memory'], getSpecValue('gpu', ['vram', 'memory'], '-'))}</span>
+             </div>
+             <div class="key-spec-item">
+               <span class="ks-label">메모리 용량</span>
+               <span class="ks-value">${getSpecValue('memory', ['용량', 'capacity'], '-')}</span>
+             </div>
+             <div class="key-spec-item">
+               <span class="ks-label">저장 공간</span>
+               <span class="ks-value">${getSpecValue('storage', ['용량', 'capacity'], getSpecValue('ssd', ['용량', 'capacity'], '-'))}</span>
+             </div>
+             <div class="key-spec-item">
+               <span class="ks-label">전력 효율</span>
+               <span class="ks-value efficiency-badge" data-grade="${efficiency}">${efficiency}</span>
+             </div>
+          </div>
+
+          <div class="total-price-box">
+             <span class="tp-label">총 견적</span>
+             <span class="tp-value">${formattedTotalPrice}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Bottom: 가격 변동 예측 대시보드 -->
+      <div class="dashboard-bottom-row">
+        <div class="dashboard-card price-analysis-section">
+           <h3 class="card-title">종합 가격 변동 예측 및 구매 적기 분석</h3>
+           <div class="price-analysis-content">
+              <div class="price-graph-container" id="price-prediction-graph"></div>
+              <div class="price-table-container">
+                 <table class="price-advice-table">
+                   <thead>
+                     <tr>
+                       <th>부품</th>
+                       <th>현재가</th>
+                       <th>최적 구매 시기</th>
+                       <th>예상 절약</th>
+                       <th>상태</th>
+                     </tr>
+                   </thead>
+                   <tbody>
+                      ${generatePriceAdviceTable(selectedParts)}
+                   </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      </div>
+    </div>
+
+    <style>
+      .final-dashboard-container {
+        padding: 20px;
+        animation: fadeIn 0.5s ease;
+        max-width: 900px;
+        margin: 0 auto;
+        color: #fff;
+      }
+      .dashboard-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding-bottom: 15px;
+      }
+      .dashboard-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        color: var(--color-accent, #3fa9f5);
+      }
+      .dashboard-main-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+        min-height: 500px; /* Taller for better image ratio */
+      }
+      .dashboard-card {
+        background: rgba(30, 32, 44, 0.6);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 24px;
+        backdrop-filter: blur(10px);
+        display: flex;
+        flex-direction: column;
+      }
+      .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 20px;
+        color: #e2e8f0;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding-bottom: 12px;
+      }
+      
+      /* Image Section */
+      .ai-image-box {
+        flex: 1;
+        background: #000;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        min-height: 400px;
+        position: relative;
+      }
+      .ai-generated-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Cover usually looks better for hero images */
+      }
+      
+      /* Specs Section */
+      .specs-list {
+        flex: 1;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+        max-height: 300px;
+      }
+      .spec-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.03);
+      }
+      .spec-category { color: #94a3b8; width: 30%; }
+      .spec-name { 
+          color: #f1f5f9; 
+          text-align: right; 
+          flex: 1; 
+          white-space: nowrap; 
+          overflow: hidden; 
+          text-overflow: ellipsis; 
+          max-width: 70%;
+      }
+      
+      .key-specs-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 24px;
+        background: rgba(0,0,0,0.2);
+        padding: 16px;
+        border-radius: 8px;
+      }
+      .key-spec-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .ks-label { font-size: 0.8rem; color: #94a3b8; margin-bottom: 6px; }
+      .ks-value { font-size: 1.1rem; font-weight: 700; color: #fff; }
+
+      .total-price-box {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: auto;
+        padding-top: 20px;
+        border-top: 2px solid rgba(255,255,255,0.1);
+      }
+      .tp-label { font-size: 1.2rem; color: #e2e8f0; }
+      .tp-value { font-size: 1.8rem; font-weight: 800; color: #4ade80; }
+
+      /* Bottom: Price Analysis - STACKED */
+      .dashboard-bottom-row {
+        margin-top: 0;
+      }
+      .price-analysis-content {
+        display: grid;
+        grid-template-columns: 1fr; /* Stacked */
+        gap: 30px;
+      }
+      .price-graph-container {
+        height: 320px; /* Taller graph */
+        background: rgba(0,0,0,0.2);
+        border-radius: 8px;
+        position: relative;
+        padding: 10px;
+      }
+      .price-table-container {
+        width: 100%;
+        overflow-x: auto;
+      }
+      .price-advice-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      .price-advice-table th {
+        text-align: left;
+        color: #94a3b8;
+        padding: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+      .price-advice-table td {
+        padding: 12px;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        color: #e2e8f0;
+      }
+      .price-status {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .status-good { background: rgba(74, 222, 128, 0.2); color: #4ade80; }
+      .status-wait { background: rgba(246, 173, 85, 0.2); color: #f6ad55; }
+      .action-btn {
+        padding: 10px 24px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s;
+        border: none;
+        font-size: 1rem;
+      }
+      .action-btn.primary {
+        background: var(--color-accent, #3fa9f5);
+        color: white;
+      }
+      .action-btn.primary:hover {
+        background: #2b93db;
+      }
+      
+      /* Efficiency Badge */
+      .efficiency-badge {
+        padding: 2px 12px;
+        border-radius: 12px;
+        min-width: 40px;
+        text-align: center;
+      }
+      .efficiency-badge[data-grade="상"] { color: #4ade80; background: rgba(74, 222, 128, 0.15); border: 1px solid rgba(74, 222, 128, 0.3); }
+      .efficiency-badge[data-grade="중"] { color: #f6ad55; background: rgba(246, 173, 85, 0.15); border: 1px solid rgba(246, 173, 85, 0.3); }
+      .efficiency-badge[data-grade="하"] { color: #f87171; background: rgba(248, 113, 113, 0.15); border: 1px solid rgba(248, 113, 113, 0.3); }
+      
+      @media (max-width: 900px) {
+        .dashboard-main-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  `;
+
+  // Render Price Graph
+  renderPricePredictionGraph(document.getElementById('price-prediction-graph'), totalPrice);
+}
+
+/**
+ * 가격 조언 테이블 생성
+ */
+function generatePriceAdviceTable(parts) {
+  if (!parts || parts.length === 0) return '<tr><td colspan="5">데이터 없음</td></tr>';
+
+  // 주요값 비싼 부품 위주로 5개만 표시
+  const sorted = [...parts].sort((a, b) => extractPrice(b.price) - extractPrice(a.price)).slice(0, 5);
+
+  return sorted.map(part => {
+    const price = extractPrice(part.price);
+    // Mock prediction logic
+    const isGood = Math.random() > 0.4; // 60% chance good
+    const status = isGood ? '<span class="price-status status-good">구매 적기</span>' : '<span class="price-status status-wait">대기 권장</span>';
+    const bestTime = isGood ? '지금' : '2주 후';
+    const saving = isGood ? '-' : `약 ${Math.round(price * 0.05).toLocaleString()}원`;
+
+    return `
+          <tr>
+            <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${part.name}</td>
+            <td>${formatPrice(price)}</td>
+            <td>${bestTime}</td>
+            <td>${saving}</td>
+            <td>${status}</td>
+          </tr>
+        `;
+  }).join('');
+}
+
+/**
+ * 가격 예측 그래프 렌더링 (SVG)
+ */
+function renderPricePredictionGraph(container, currentTotal) {
+  if (!container) return;
+
+  // Mock Data Generator: 3 months history, current, 1 month forecast
+  const points = [];
+  const now = new Date();
+  // 3 months ago
+  for (let i = -3; i <= 1; i++) { // -3(3mo ago) to +1(1mo future)
+    const date = new Date();
+    date.setMonth(now.getMonth() + i);
+    const label = i === 0 ? '현재' : (i > 0 ? '익월 예상' : `${Math.abs(i)}개월 전`);
+
+    // Random fluctuation +/- 10%
+    const volatility = 0.1;
+    const randomFactor = 1 + (Math.random() * volatility * 2 - volatility);
+    let val = currentTotal * randomFactor;
+
+    // Force forecast to be slightly lower (optimistic)
+    if (i > 0) val = currentTotal * 0.95;
+    if (i === 0) val = currentTotal;
+
+    points.push({ label, value: val });
+  }
+
+  const maxVal = Math.max(...points.map(p => p.value)) * 1.1;
+  const minVal = Math.min(...points.map(p => p.value)) * 0.9;
+  const width = container.clientWidth || 600;
+  const height = container.clientHeight || 250;
+  const padding = { top: 20, right: 30, bottom: 30, left: 60 };
+
+  const svgNs = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+  // Draw Grid (Y-axis)
+  const gridLines = 4;
+  for (let i = 0; i <= gridLines; i++) {
+    const val = minVal + (maxVal - minVal) * (i / gridLines);
+    const y = height - padding.bottom - ((val - minVal) / (maxVal - minVal)) * (height - padding.top - padding.bottom);
+
+    // Line
+    const line = document.createElementNS(svgNs, "line");
+    line.setAttribute("x1", padding.left);
+    line.setAttribute("y1", y);
+    line.setAttribute("x2", width - padding.right);
+    line.setAttribute("y2", y);
+    line.setAttribute("stroke", "rgba(255,255,255,0.1)");
+    line.setAttribute("stroke-width", "1");
+    svg.appendChild(line);
+
+    // Label
+    const text = document.createElementNS(svgNs, "text");
+    text.setAttribute("x", padding.left - 10);
+    text.setAttribute("y", y + 4);
+    text.setAttribute("text-anchor", "end");
+    text.setAttribute("fill", "#94a3b8");
+    text.setAttribute("font-size", "10");
+    text.textContent = Math.round(val / 10000) + "만";
+    svg.appendChild(text);
+  }
+
+  // Draw Polyline
+  const polylinePoints = points.map((p, i) => {
+    const x = padding.left + (i / (points.length - 1)) * (width - padding.left - padding.right);
+    const y = height - padding.bottom - ((p.value - minVal) / (maxVal - minVal)) * (height - padding.top - padding.bottom);
+    return `${x},${y}`;
+  }).join(" ");
+
+  const polyline = document.createElementNS(svgNs, "polyline");
+  polyline.setAttribute("points", polylinePoints);
+  polyline.setAttribute("fill", "none");
+  polyline.setAttribute("stroke", "#3fa9f5");
+  polyline.setAttribute("stroke-width", "3");
+  svg.appendChild(polyline);
+
+  // Draw Points and X-Labels
+  points.forEach((p, i) => {
+    const x = padding.left + (i / (points.length - 1)) * (width - padding.left - padding.right);
+    const y = height - padding.bottom - ((p.value - minVal) / (maxVal - minVal)) * (height - padding.top - padding.bottom);
+
+    // Circle
+    const circle = document.createElementNS(svgNs, "circle");
+    circle.setAttribute("cx", x);
+    circle.setAttribute("cy", y);
+    circle.setAttribute("r", "4");
+    circle.setAttribute("fill", i === points.length - 1 ? "#3fa9f5" : "#fff"); // Last point colored
+    svg.appendChild(circle);
+
+    // X Label
+    const text = document.createElementNS(svgNs, "text");
+    text.setAttribute("x", x);
+    text.setAttribute("y", height - 5);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#94a3b8");
+    text.setAttribute("font-size", "11");
+    text.textContent = p.label;
+    svg.appendChild(text);
+  });
+
+  container.appendChild(svg);
+}
+
+/**
+ * 스펙 값 추출 헬퍼
+ */
+function getSpecValue(categoryKey, specKeys, fallback) {
+  const part = selectedParts.find(p => p.category.toLowerCase().includes(categoryKey));
+  if (!part || !part.specs) return fallback;
+
+  if (Array.isArray(specKeys)) {
+    for (const key of specKeys) {
+      // specs 키 중 key를 포함하는 것이 있는지 찾음
+      const match = Object.keys(part.specs).find(k => k.toLowerCase().includes(key.toLowerCase()));
+      if (match) return part.specs[match];
+    }
+    // 직접 키 매칭 시도
+    for (const key of specKeys) {
+      if (part.specs[key]) return part.specs[key];
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * AI 이미지 생성 요청
+ */
+async function generatePcImage() {
+  const container = document.getElementById('ai-image-container');
+  try {
+    const response = await fetch(`${API_BASE_URL}/generate/pc-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        components: selectedParts,
+        purpose: buildContext.purpose || 'gaming'
+      })
+    });
+
+    const data = await response.json();
+    if (data.image_url) {
+      container.innerHTML = `<img src="${data.image_url}" alt="AI Generated PC Build" class="ai-generated-img" style="max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">`;
+    } else {
+      throw new Error('No image returned');
+    }
+  } catch (e) {
+    console.error('Image generation failed:', e);
+    container.innerHTML = `
+      <div class="error-state" style="text-align: center; padding: 20px;">
+        <p style="color: #ff6b6b; margin-bottom: 10px;">이미지 생성 실패</p>
+        <button onclick="generatePcImage()" style="padding: 5px 10px; background: var(--color-bg-tertiary); border-radius: 4px;">재시도</button>
+      </div>
+    `;
+  }
+}
+
+function copyLink() {
+  alert('공유 링크가 클립보드에 복사되었습니다! (시뮬레이션)');
 }
 
 /**

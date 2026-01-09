@@ -14,6 +14,7 @@ import os
 from rag.pipeline import RAGPipeline
 from rag.step_by_step import StepByStepRAGPipeline, CATEGORY_INFO
 from modules.multi_agent.orchestrator import AgentOrchestrator, RecommendationResult
+from modules.genai.image_generator import ImageGenerator
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 # 로깅 설정
@@ -44,6 +45,7 @@ app.add_middleware(
 pipeline: Optional[RAGPipeline] = None
 step_pipeline: Optional[StepByStepRAGPipeline] = None
 orchestrator: Optional[AgentOrchestrator] = None
+image_generator: Optional[ImageGenerator] = None
 
 
 # Pydantic 모델 정의
@@ -123,7 +125,14 @@ class StepResponse(BaseModel):
     is_final: bool
     total_price: int = 0
     category_description: Optional[str] = None
+    category_description: Optional[str] = None
     spec_meanings: Optional[Dict[str, str]] = None
+
+
+class GenerateImageRequest(BaseModel):
+    """이미지 생성 요청"""
+    components: List[Dict[str, Any]] = Field(..., description="선택된 부품 목록")
+    purpose: str = Field("gaming", description="사용 목적")
 
 
 # 이벤트 핸들러
@@ -202,6 +211,10 @@ async def startup_event():
             llm=llm
         )
         logger.info("✅ Step-by-Step 파이프라인 초기화 완료!")
+
+        # 이미지 생성기 초기화
+        image_generator = ImageGenerator(api_key=llm_api_key)
+        logger.info("🎨 이미지 생성기 초기화 완료!")
 
         # 멀티 에이전트 오케스트레이터 초기화
         orchestrator = AgentOrchestrator(verbose=True)
@@ -745,6 +758,38 @@ async def step_next(request: StepRequest):
     except Exception as e:
         logger.error(f"Step 처리 실패: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Step 처리 실패: {str(e)}")
+
+
+@app.post("/generate/pc-image")
+async def generate_pc_image(request: GenerateImageRequest):
+    """
+    선택된 부품을 기반으로 PC 조립 이미지를 생성합니다.
+    """
+    global image_generator
+    
+    if not image_generator or not image_generator.client:
+        raise HTTPException(status_code=503, detail="Image generation service is not available (Check API Key)")
+        
+    try:
+        image_base64 = image_generator.generate_pc_image(
+            components=request.components,
+            purpose=request.purpose
+        )
+        
+        if not image_base64:
+             raise HTTPException(status_code=500, detail="Failed to generate image")
+             
+        import base64
+        if isinstance(image_base64, bytes):
+            image_base64 = base64.b64encode(image_base64).decode('utf-8')
+            
+        return {
+            "image_url": f"data:image/png;base64,{image_base64}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Image generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/agent/status")
