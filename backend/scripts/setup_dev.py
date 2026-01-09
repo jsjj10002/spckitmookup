@@ -31,19 +31,19 @@ def print_step(step: int, total: int, text: str):
 
 def print_success(text: str):
     """성공 메시지 출력"""
-    print(f"✅ {text}")
+    print(f"[SUCCESS] {text}")
 
 def print_error(text: str):
     """에러 메시지 출력"""
-    print(f"❌ {text}")
+    print(f"[ERROR] {text}")
 
 def print_warning(text: str):
     """경고 메시지 출력"""
-    print(f"⚠️  {text}")
+    print(f"[WARNING] {text}")
 
 def print_info(text: str):
     """정보 메시지 출력"""
-    print(f"ℹ️  {text}")
+    print(f"[INFO] {text}")
 
 def check_command(command: str, check_output: bool = False) -> bool:
     """명령어가 설치되어 있는지 확인"""
@@ -154,7 +154,7 @@ def main():
     print("  4. 환경 변수 파일 생성")
     print("  5. 벡터 DB 초기화 (필요시)")
     print()
-    print("💡 벡터 DB가 없으면 자동으로 초기화됩니다.")
+    print("[TIP] 벡터 DB가 없으면 자동으로 초기화됩니다.")
     print("   (약 10-15분 소요, Enter만 누르면 자동 진행)")
     print()
     
@@ -303,13 +303,13 @@ def main():
     if not has_data:
         print_warning("벡터 데이터베이스가 없습니다.")
         print_info("")
-        print_info("💡 벡터 DB 초기화 옵션:")
+        print_info("[TIP] 벡터 DB 초기화 옵션:")
         print_info("   1. 지금 초기화 (약 10-15분 소요) - 권장")
         print_info("   2. API 서버 실행 시 자동 초기화")
         print_info("")
-        print_info("   ⚠️  초기화에는 약 10-15분이 소요되며,")
+        print_info("   [WARNING] 초기화에는 약 10-15분이 소요되며,")
         print_info("   135,660개의 문서를 임베딩합니다.")
-        print_info("   💡 지금 초기화하면 나중에 바로 개발을 시작할 수 있습니다.")
+        print_info("   [TIP] 지금 초기화하면 나중에 바로 개발을 시작할 수 있습니다.")
         print()
         
         init_now = get_user_input("지금 초기화하시겠습니까? (y/n)", "y")
@@ -371,34 +371,34 @@ def main():
     
     # 완료 메시지
     print_header("설정 완료!")
-    print_success("개발 환경 설정이 완료되었습니다! 🎉")
+    print_success("개발 환경 설정이 완료되었습니다!")
     print()
     print("=" * 70)
     print("  다음 단계")
     print("=" * 70)
     print()
-    print("1️⃣  백엔드 API 서버 실행:")
+    print("[1] 백엔드 API 서버 실행:")
     if sys.platform == "win32":
-        print("   📝 명령어: backend\\run_dev.bat")
+        print("   명령어: backend\\run_dev.bat")
         print("   또는 더블클릭: backend\\run_dev.bat")
     else:
-        print("   📝 명령어: ./backend/run_dev.sh")
+        print("   명령어: ./backend/run_dev.sh")
         print("   또는: cd backend && source .venv/bin/activate && python -m uvicorn backend.api.main:app --reload")
     print()
-    print("   ⚠️  벡터 DB가 없으면 서버 시작 시 자동으로 초기화됩니다.")
-    print("   ⏱️  초기화에는 약 10-15분이 소요됩니다.")
+    print("   [WARNING] 벡터 DB가 없으면 서버 시작 시 자동으로 초기화됩니다.")
+    print("   [TIME] 초기화에는 약 10-15분이 소요됩니다.")
     print()
-    print("2️⃣  프론트엔드 개발 서버 실행 (별도 터미널):")
-    print("   📝 명령어: npm install && npm run dev")
+    print("[2] 프론트엔드 개발 서버 실행 (별도 터미널):")
+    print("   명령어: npm install && npm run dev")
     print()
-    print("3️⃣  브라우저에서 확인:")
-    print("   🌐 API 문서: http://localhost:8000/docs")
-    print("   💚 헬스 체크: http://localhost:8000/health")
-    print("   📊 통계: http://localhost:8000/stats")
+    print("[3] 브라우저에서 확인:")
+    print("   API 문서: http://localhost:8000/docs")
+    print("   헬스 체크: http://localhost:8000/health")
+    print("   통계: http://localhost:8000/stats")
     print()
     print("=" * 70)
     print()
-    print("📚 문서 안내:")
+    print("[DOCS] 문서 안내:")
     print("   - 온보딩 가이드: backend/ONBOARDING.md")
     print("   - 모듈 개발 가이드: backend/modules/README.md")
     print("   - 빠른 시작: docs/QUICK_START.md")

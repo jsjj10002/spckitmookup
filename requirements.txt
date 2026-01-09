@@ -12,6 +12,9 @@ pydantic>=2.6.0
 loguru>=0.7.2
 
 
+# Cloud Setup
+google-cloud-storage>=2.14.0
+
 # Multi-Agent & Testing
 crewai>=0.1.0
 crewai-tools>=0.1.0
