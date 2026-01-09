@@ -6,6 +6,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY scripts/ ./scripts/
 COPY frontend/ ./frontend/
+COPY vite.config.ts .
+COPY tsconfig.json .
 
 # 의존성 설치 및 빌드
 RUN npm install

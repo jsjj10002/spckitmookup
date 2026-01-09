@@ -33,6 +33,7 @@ Cloud Build가 Cloud Run에 배포하려면 추가 권한이 필요합니다.
 3. 연필 아이콘(수정)을 누르고 다음 **역할(Role)**을 추가합니다:
     *   **Cloud Run 관리자 (Cloud Run Admin)**: 배포를 위해 필요
     *   **서비스 계정 사용자 (Service Account User)**: Cloud Run 실행 계정을 사용하기 위해 필요
+    *   **로그 작성자 (Logs Writer)**: 빌드 로그를 저장하기 위해 필요 (필수!)
 4. 저장합니다.
 
 ### 1-4. 테스트
