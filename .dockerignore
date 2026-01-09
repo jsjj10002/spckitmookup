@@ -94,8 +94,6 @@ research
 # 배치 스크립트 (Windows 전용, 프로덕션에서 불필요)
 *.bat
 
-# TypeScript 설정 (빌드 시에만 필요)
-tsconfig.json
-
-# Vite 설정 (개발 환경 전용)
-vite.config.ts
+# TypeScript 설정 & Vite 설정 (빌드 시 필요하므로 포함)
+# tsconfig.json
+# vite.config.ts
