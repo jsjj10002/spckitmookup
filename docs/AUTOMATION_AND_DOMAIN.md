@@ -30,11 +30,16 @@ GitHub에 코드를 푸시할 때마다 Goolge Cloud Run 서버가 자동으로 
 Cloud Build가 Cloud Run에 배포하려면 추가 권한이 필요합니다.
 1. [IAM 및 관리자](https://console.cloud.google.com/iam-admin/iam) 페이지로 이동합니다.
 2. `[PROJECT_NUMBER]@cloudbuild.gserviceaccount.com` 형식의 이메일을 가진 **Cloud Build Service Account**를 찾습니다.
-3. 연필 아이콘(수정)을 누르고 다음 **역할(Role)**을 추가합니다:
-    *   **Cloud Run 관리자 (Cloud Run Admin)**: 배포를 위해 필요
-    *   **서비스 계정 사용자 (Service Account User)**: Cloud Run 실행 계정을 사용하기 위해 필요
-    *   **로그 작성자 (Logs Writer)**: 빌드 로그를 저장하기 위해 필요 (필수!)
-4. 저장합니다.
+3. 연필 아이콘(수정)을 누르고 다음 **4가지 핵심 역할(Roles)**이 모두 있는지 확인합니다. (하나라도 빠지면 실패합니다!)
+
+    | 역할 이름 | 영문 명칭 (Role ID) | 설명 |
+    | :--- | :--- | :--- |
+    | **Cloud Run 관리자** | `Cloud Run Admin` | 서비스를 배포(생성/수정)할 권한 |
+    | **서비스 계정 사용자** | `Service Account User` | Cloud Run 실행 계정(ID)을 사용할 권한 |
+    | **로그 작성자** | `Logs Writer` | 빌드/배포 로그를 저장할 권한 (필수) |
+    | **Artifact Registry 작성자** | `Artifact Registry Writer` | 빌드된 이미지를 업로드할 권한 (필수) |
+
+4. 저장합니다. **이 4가지가 모두 있어야 "절대 실패하지 않는" 권한 세팅이 됩니다.**
 
 ### 1-4. 테스트
 *   이제 로컬에서 코드를 조금 수정하고(`README.md` 등) `git push`를 해보세요.
