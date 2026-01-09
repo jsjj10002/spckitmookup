@@ -1,31 +1,24 @@
 
 const fs = require('fs');
-const readline = require('readline');
 const path = 'backend/data/pc_data_dump.sql';
-const outPath = 'sql_map_node.txt';
+const stream = fs.createReadStream(path, { encoding: 'utf8' });
 
-async function scan() {
-    try {
-        const fileStream = fs.createReadStream(path);
-        const rl = readline.createInterface({
-            input: fileStream,
-            crlfDelay: Infinity
-        });
+let buffer = '';
+let lineCount = 0;
 
-        let lineNum = 0;
-        let out = fs.createWriteStream(outPath);
+stream.on('data', (chunk) => {
+    buffer += chunk;
+    let lines = buffer.split('\n');
+    buffer = lines.pop(); // Keep the last partial line
 
-        for await (const line of rl) {
-            lineNum++;
-            if (line.trim().toUpperCase().startsWith('CREATE TABLE')) {
-                out.write(`Line ${lineNum}: ${line.trim().substring(0, 200)}\n`);
-            }
+    lines.forEach((line) => {
+        lineCount++;
+        if (line.includes('CREATE TABLE')) {
+            console.log(`Line ${lineCount}: ${line.substring(0, 100)}`);
         }
-        console.log('Done scanning.');
-        out.end();
-    } catch (err) {
-        console.error('Error:', err);
-    }
-}
+    });
+});
 
-scan();
+stream.on('end', () => {
+    console.log('Finished');
+});
