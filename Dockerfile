@@ -35,8 +35,8 @@ RUN chmod +x scripts/start_cloud_run.sh
 
 # 로컬에 생성된 ChromaDB 데이터도 함께 복사 (데이터 유지 - 로컬 테스트용)
 # 프로덕션(GCS 사용)에서는 이 경로가 무시되고 /tmp/chroma_db를 사용하게 됨
-COPY backend/chroma_db/ ./backend/chroma_db/
-COPY .env .
+# COPY backend/chroma_db/ ./backend/chroma_db/
+# COPY .env .
 
 # 빌드된 프론트엔드 파일 복사
 COPY --from=frontend-builder /app/dist ./dist
@@ -47,6 +47,7 @@ ENV PORT=8000
 # Cloud Run 환경에서 GCS 사용 시 데이터 경로 (기본값)
 # 로컬 빌드 시에는 .env의 설정을 따르거나 기본값 사용
 ENV CHROMA_PERSIST_DIRECTORY=/tmp/chroma_db
+ENV PYTHONPATH=/app/backend
 
 EXPOSE 8000
 

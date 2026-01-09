@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
-    "build": "npm run copy-files",
+    "build": "vite build",
     "preview": "vite preview --outDir dist",
     "copy-files": "node scripts/build.js"
   },
