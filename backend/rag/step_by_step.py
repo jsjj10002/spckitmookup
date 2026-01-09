@@ -166,8 +166,8 @@ class SelectionStep(int, Enum):
     SSD = 5
     HDD = 6
     PSU = 7
-    CASE = 8
-    CPU_COOLER = 9
+    CASE = 9
+    CPU_COOLER = 8
 
 
 # 단계별 카테고리 매핑
@@ -193,8 +193,8 @@ BUDGET_ALLOCATION = {
         "ssd": 0.08,
         "hdd": 0.00, # Gaming often doesn't need HDD or low priority
         "psu": 0.05,
-        "case": 0.05,
         "cpu_cooler": 0.03,
+        "case": 0.05,
     },
     "workstation": {
         "cpu": 0.30,
@@ -204,8 +204,8 @@ BUDGET_ALLOCATION = {
         "ssd": 0.10,
         "hdd": 0.02, # Workstation might need HDD
         "psu": 0.05,
-        "case": 0.05,
         "cpu_cooler": 0.03,
+        "case": 0.05,
     },
 
     "general": {
@@ -216,8 +216,8 @@ BUDGET_ALLOCATION = {
         "ssd": 0.08,
         "hdd": 0.02,
         "psu": 0.06,
-        "case": 0.06,
         "cpu_cooler": 0.04,
+        "case": 0.06,
     },
 }
 
@@ -566,7 +566,7 @@ class StepByStepRAGPipeline:
         candidates = candidates[:top_k]
         
         # 다음 단계 결정
-        next_step = step + 1 if step < 8 else None
+        next_step = step + 1 if step < 9 else None
         
         # LLM 분석 및 해시태그 생성 (한 번에 수행)
         analysis = self._enrich_candidates_with_llm(session, step, category, candidates)
@@ -580,7 +580,7 @@ class StepByStepRAGPipeline:
             remaining_budget=remaining_budget - allocated_budget,
             context=session.context,
             next_step=next_step,
-            is_final_step=(step == 8),
+            is_final_step=(step == 9),
             analysis=analysis
         )
     

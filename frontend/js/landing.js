@@ -3,21 +3,55 @@
  * 초기 화면에서 메시지 입력 후 builder 페이지로 전환
  */
 
+import { loginWithGoogle, setupAuthListener, ensureLoggedIn, logout } from './auth.js';
+import { showPopularBuilds } from './community.js';
+
 // DOM 요소
 const chatInput = document.getElementById('landing-chat-input');
 const sendBtn = document.getElementById('landing-send-btn');
 const mySpecsBtn = document.getElementById('my-specs-btn');
+const popularBuildsBtn = document.getElementById('popular-builds-btn');
+const loginBtn = document.getElementById('landing-login-btn');
 
 /**
  * 초기화
  */
 function init() {
+  // Auth Listener 설정 for Landing Page
+  setupAuthListener({
+    onLogin: (user) => {
+      if (loginBtn) {
+        loginBtn.textContent = 'Logout';
+        loginBtn.onclick = logout;
+        // 프로필 이미지로 교체도 가능하지만, 간단히 텍스트 변경
+        loginBtn.style.background = '#333';
+        loginBtn.title = `${user.displayName}님 환영합니다`;
+      }
+    },
+    onLogout: () => {
+      if (loginBtn) {
+        loginBtn.textContent = 'Login';
+        loginBtn.onclick = loginWithGoogle;
+        loginBtn.style.background = '#000';
+      }
+    }
+  });
+
   // 이벤트 리스너 등록
   sendBtn.addEventListener('click', handleSendClick);
   chatInput.addEventListener('keydown', handleKeyDown);
 
   if (mySpecsBtn) {
     mySpecsBtn.addEventListener('click', handleMySpecsClick);
+  }
+
+  if (popularBuildsBtn) {
+    popularBuildsBtn.addEventListener('click', showPopularBuilds);
+  }
+
+  // 로그인 버튼 초기 설정 (Auth Listener가 로드리기 전)
+  if (loginBtn) {
+    loginBtn.onclick = loginWithGoogle;
   }
 
   // 입력 포커스
@@ -27,11 +61,15 @@ function init() {
 /**
  * 전송 버튼 클릭 핸들러
  */
-function handleSendClick() {
+async function handleSendClick() {
   // contenteditable 요소이므로 innerText로 값을 가져옴
   const message = chatInput.innerText.trim();
   if (message) {
-    navigateToBuilder(message);
+    // 로그인 체크 (채팅 시도 시)
+    const user = await ensureLoggedIn("채팅을 시작하려면 로그인이 필요합니다.");
+    if (user) {
+      navigateToBuilder(message);
+    }
   }
 }
 

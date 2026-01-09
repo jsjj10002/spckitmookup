@@ -4,6 +4,8 @@
  */
 
 import { getPCRecommendation, extractPrice, formatPrice, getStepCandidates, API_BASE_URL } from './api.js';
+import { ensureLoggedIn, setupAuthListener, logout } from './auth.js';
+import { saveCurrentBuild, shareCurrentBuild } from './community.js';
 
 // DOM 요소
 const chatMessages = document.getElementById('chat-messages');
@@ -34,26 +36,25 @@ const terminalLoadingText = document.getElementById('terminal-loading-text');
 let selectedParts = [];
 let isLoading = false;
 let chatHistory = [];
-const CATEGORY_ORDER = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'Power', 'Case', 'Cooler'];
+const CATEGORY_ORDER = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'HDD', 'Power', 'Cooler', 'Case'];
 
 // 슬롯형 UI 표시용 카테고리 정의 (라벨 + 매칭 키워드)
 const CATEGORY_SLOTS = [
   { label: 'CPU', match: ['cpu'] },
-  { label: '쿨러/튜닝', match: ['cooler', '튜닝', 'fan'] },
   { label: '메인보드', match: ['mainboard', 'motherboard', '메인보드'] },
   { label: '메모리', match: ['ram', 'memory', '메모리'] },
   { label: '그래픽카드', match: ['gpu', 'graphics', '그래픽'] },
   { label: 'SSD', match: ['ssd'] },
   { label: 'HDD', match: ['hdd', 'hard'] },
-  { label: '케이스', match: ['case', '케이스'] },
   { label: '파워', match: ['power', 'psu', '파워'] },
-  { label: '소프트웨어', match: ['software', 'os', '윈도우'] }
+  { label: '쿨러/튜닝', match: ['cooler', '튜닝', 'fan'] },
+  { label: '케이스', match: ['case', '케이스'] }
 ];
 
 // 빌드 상태 관리
 let currentPhase = 'requirements'; // 'requirements' | 'building'
 let buildStageIndex = 0;
-const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'HDD', 'Power', 'Case', 'Cooler'];
+const BUILD_STAGES = ['CPU', 'Mainboard', 'RAM', 'GPU', 'SSD', 'HDD', 'Power', 'Cooler', 'Case'];
 
 // Step-by-Step 상태 관리
 let stepSessionId = null;  // Step-by-step 세션 ID
@@ -112,6 +113,39 @@ function init() {
   chatInput.addEventListener('keydown', handleKeyDown);
   homeBtn.addEventListener('click', () => {
     window.location.href = 'index.html';
+  });
+
+  // Auth Listener (프로필 이미지 업데이트 및 로그아웃 처리)
+  setupAuthListener({
+    onLogin: (user) => {
+      // 아바타 업데이트
+      const avatar = document.querySelector('.avatar');
+      if (avatar && user.photoURL) {
+        avatar.src = user.photoURL;
+        avatar.title = user.displayName;
+      }
+      // 프로필 버튼 클릭 시 로그아웃 옵션 제공 (간단)
+      const avatarBtn = document.querySelector('.avatar-btn');
+      if (avatarBtn) {
+        avatarBtn.onclick = () => {
+          if (confirm(`${user.displayName}님, 로그아웃 하시겠습니까?`)) {
+            logout();
+          }
+        };
+      }
+    },
+    onLogout: () => {
+      // 로그아웃 시 기본 이미지로 복귀? 혹은 강제 홈 이동?
+      // 여기서는 그대로 유지하거나 기본값
+    }
+  });
+
+  // Share 버튼 이벤트 위임 (action-btn pill-btn)
+  // builder.html에 ID가 없으므로 클래스로 찾거나 이벤트 위임 사용
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.pill-btn') && e.target.innerText.includes('Share')) {
+      shareCurrentBuild();
+    }
   });
 
   // Start Build 버튼 리스너
@@ -238,11 +272,13 @@ function loadState() {
 /**
  * 전송 버튼 클릭 핸들러
  */
-function handleSendClick() {
+async function handleSendClick() {
   const message = chatInput.value.trim();
   if (message && !isLoading) {
-    handleSendMessage(message);
-    chatInput.value = '';
+    if (await ensureLoggedIn("채팅을 계속하려면 로그인이 필요합니다.")) {
+      handleSendMessage(message);
+      chatInput.value = '';
+    }
   }
 }
 
@@ -332,8 +368,13 @@ async function handleSendMessage(message) {
           chatHistory.push({ role: 'model', text: agentResponse.analysis });
         }
 
-        // 로딩 메시지 출력
-        await addMessageWithTyping("🔍 고객님의 요구사항에 딱 맞는 부품을 찾고 있습니다... 잠시만 기다려 주세요.", 'ai');
+        // 로딩 메시지 출력 (빙글빙글 아이콘 사용)
+        const loadingMsgDiv = addMessage('', 'ai', true);
+        const loadingTextEl = loadingMsgDiv.querySelector('.thinking-text');
+        if (loadingTextEl) {
+          loadingTextEl.textContent = "고객님의 요구사항에 딱 맞는 부품을 찾고 있습니다...";
+          // startDynamicLoadingText는 addMessage 내부에서 이미 호출됨 (텍스트 변경만 하면 됨)
+        }
 
         // Step 1 API 호출 (추출된 budget/purpose 사용)
         const stepResponse = await getStepCandidates({
@@ -383,13 +424,23 @@ async function handleSendMessage(message) {
   } catch (error) {
     console.error('메시지 전송 오류:', error);
     stopDynamicLoadingText();
-    loadingMessage.remove();
+    // 로딩 메시지를 찾아서 제거 (class로 찾기)
+    const loadingMsg = chatMessages.querySelector('.thinking-text')?.closest('.message');
+    if (loadingMsg) loadingMsg.remove();
+
     addMessage(error.message || '오류가 발생했습니다', 'error');
   } finally {
+    // 모든 로딩 메시지 제거 (안전장치)
+    const loadingMsgs = chatMessages.querySelectorAll('.thinking-text');
+    loadingMsgs.forEach(el => el.closest('.message')?.remove());
+
+    stopDynamicLoadingText();
     isLoading = false;
     updateSendButtonState();
   }
 }
+
+
 
 /**
  * 빌드 요청 감지
@@ -617,6 +668,8 @@ function addMessage(text, type = 'user', isLoading = false) {
  */
 let loadingInterval;
 function startDynamicLoadingText(element) {
+  if (!element) return;
+
   const steps = [
     "요구사항 분석 중...",
     "부품 검색 중...",
@@ -624,9 +677,6 @@ function startDynamicLoadingText(element) {
     "답변 생성 중..."
   ];
   let index = 0;
-
-  // 초기 텍스트 설정
-  element.textContent = steps[0];
 
   if (loadingInterval) clearInterval(loadingInterval);
 
@@ -643,7 +693,7 @@ function startDynamicLoadingText(element) {
       element.style.transform = 'translateY(0)';
     }, 300);
 
-  }, 1500); // 1.5초 간격 (더 빠르게)
+  }, 1500); // 1.5초 간격
 }
 
 function stopDynamicLoadingText() {
@@ -850,7 +900,11 @@ function displayRecommendations(components) {
  * 최종 대시보드 표시
  */
 async function showFinalDashboard() {
-  const totalPrice = selectedParts.reduce((sum, p) => sum + extractPrice(p.price), 0);
+  const totalPrice = selectedParts.reduce((sum, p) => {
+    // 가격이 문자열일 경우 숫자만 추출, 숫자일 경우 그대로 사용
+    const price = typeof p.price === 'number' ? p.price : extractPrice(p.price);
+    return sum + price;
+  }, 0);
   const formattedTotalPrice = formatPrice(totalPrice);
 
   // 전력 효율 계산 (파워 서플라이 등급 기반)
@@ -875,7 +929,7 @@ async function showFinalDashboard() {
       <div class="dashboard-header">
         <h2 class="dashboard-title">나만의 PC 구성 완료</h2>
         <div class="dashboard-actions">
-           <button class="action-btn primary" onclick="alert('저장되었습니다 (시뮬레이션)')">저장</button>
+           <button class="action-btn primary" onclick="import('./community.js').then(m => m.saveCurrentBuild(selectedParts))">저장</button>
         </div>
       </div>
       
@@ -1530,6 +1584,9 @@ function ensurePerformancePanel() {
 /**
  * 성능 그래프 패널 표시
  */
+/**
+ * 성능 그래프 패널 표시 (Redesigned)
+ */
 function showPerformancePanel(component) {
   const overlay = ensurePerformancePanel();
   if (!overlay) return;
@@ -1537,356 +1594,226 @@ function showPerformancePanel(component) {
   if (!panel) return;
 
   overlay.classList.add('visible');
-  panel.classList.add('visible');
-  panel.querySelector('.perf-name').textContent = component.name;
-  panel.querySelector('.perf-category').textContent = component.category;
 
-  const perfBody = panel.querySelector('.perf-body');
-  perfBody.innerHTML = '';
-
-  // ----- 대표 스펙 대시보드 (Visual Spec Dashboard) -----
-  let repSpecs = component.representative_specs || {};
-
-  // Fallback: 대표 스펙이 없으면 전체 스펙 중 일부를 표시
-  if (Object.keys(repSpecs).length === 0 && component.specs) {
-    const blockedKeys = ['id', 'name', 'price', 'image', 'imageUrl', 'category', 'description', 'link', 'mall_link', 'hashtags', 'compatibility_status', 'reasons', 'score'];
-    repSpecs = Object.entries(component.specs)
-      .filter(([k, v]) => !blockedKeys.includes(k) && !k.startsWith('field_') && typeof v !== 'object' && v !== null)
-      .slice(0, 10)
-      .reduce((obj, [k, v]) => ({ ...obj, [k]: v }), {});
-  }
-
-  // --- 스펙 매핑 (한글 변환 & 아이콘 & 시각화 타입) ---
-  const SPEC_MAPPING = {
-    // Global / Common
-    'cores': { label: '코어 수', icon: '🧠', type: 'bar', max: 24, unit: '개' },
-    'core_count': { label: '코어 수', icon: '🧠', type: 'bar', max: 24, unit: '개' },
-    'clock': { label: '동작 속도', icon: '⚡', type: 'bar', max: 6.0, unit: 'GHz' },
-    'socket': { label: '소켓', icon: '🔌', type: 'badge' },
-    'graphics': { label: '내장 그래픽', icon: '🎨', type: 'text' },
-    'capacity': { label: '용량', icon: '💾', type: 'bar', max: 64, unit: 'GB' },
-    'speed': { label: '동작 클럭', icon: '🚀', type: 'bar', max: 8000, unit: 'MHz' },
-
-    // New Semantic Keys (Backend Mapped)
-    'tdp': { label: 'TDP', icon: '⚡', type: 'text', unit: 'W' },
-    'form_factor': { label: '폼팩터', icon: '📐', type: 'text' },
-    'memory_type': { label: '메모리 타입', icon: '💾', type: 'badge' },
-    'vram': { label: 'VRAM', icon: '💾', type: 'text' },
-    'chipset': { label: '칩셋', icon: '🎛️', type: 'text' },
-    'brand': { label: '제조사', icon: '🏭', type: 'badge' },
-
-    // Default Fallback
-    'default': { label: '기타 스펙', icon: '🔹', type: 'text' }
-  };
-
-  function getSpecInfo(key) {
-    const lowerKey = key.toLowerCase();
-
-    // 1. 공통 매핑 확인 (Semantic Key 우선)
-    if (SPEC_MAPPING[lowerKey]) return SPEC_MAPPING[lowerKey];
-
-    // 2. Fallback
-    if (lowerKey.startsWith('field_')) return { label: lowerKey, icon: '🏷️', type: 'text' };
-    return { label: key, icon: '🔹', type: 'text' };
-  }
-
+  // Helper for safe parsing
   function parseNumeric(val) {
     if (typeof val === 'number') return val;
     if (typeof val === 'string') return parseFloat(val.replace(/[^0-9.]/g, '')) || 0;
     return 0;
   }
 
-  if (Object.keys(repSpecs).length > 0) {
-    const specSection = document.createElement('div');
-    specSection.className = 'perf-section spec-section';
+  // --- 1. Header (Title & Close) ---
+  // Clean up previous content but keep structure
+  panel.innerHTML = '';
 
-    const specGridHTML = Object.entries(repSpecs).map(([key, value]) => {
-      const info = getSpecInfo(key);
-      const cleanValue = String(value).replace(/['"]/g, '');
-      let visualContent = '';
+  const header = document.createElement('div');
+  header.className = 'perf-header';
+  header.innerHTML = `
+    <div class="perf-title-group">
+      <span class="perf-category">${component.category}</span>
+      <h2 class="perf-name">${component.name}</h2>
+    </div>
+    <button class="perf-close" onclick="document.getElementById('performance-overlay').classList.remove('visible')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+  `;
+  panel.appendChild(header);
 
-      if (info.type === 'bar') {
-        const numVal = parseNumeric(cleanValue);
-        const percent = Math.min((numVal / info.max) * 100, 100);
-        visualContent = `
-          <div class="spec-bar-container">
-            <div class="spec-bar-bg">
-              <div class="spec-bar-fill" style="width: ${percent}%"></div>
-            </div>
-          </div>
-        `;
-      } else if (info.type === 'badge') {
-        visualContent = `<span class="spec-badge">${cleanValue}</span>`;
-      }
+  const perfBody = document.createElement('div');
+  perfBody.className = 'perf-body';
+  panel.appendChild(perfBody);
 
-      // 텍스트 표시 (Ba bar일 경우 숫자+단위만 표시, 아닐 경우 값 전체 표시)
-      const displayValue = info.type === 'badge' ? '' : cleanValue; // 뱃지는 위에서 처리함
 
-      return `
-        <div class="spec-card">
-          <div class="spec-header">
-            <div class="spec-label">${info.label}</div>
-          </div>
-          <div class="spec-body">
-             ${info.type !== 'badge' ? `<div class="spec-value" title="${cleanValue}">${cleanValue}</div>` : visualContent}
-             ${info.type === 'bar' ? visualContent : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
+  // --- 2. Key Specs Section (Grid) ---
+  let repSpecs = component.representative_specs || {};
 
-    specSection.innerHTML = `
-      <div class="section-title">주요 사양</div>
-      <div class="spec-dashboard-grid">
-        ${specGridHTML}
-      </div>
-    `;
-
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .spec-dashboard-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 16px;
-        margin-top: 15px;
-      }
-      .spec-card {
-        background: rgba(30, 30, 40, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 16px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        backdrop-filter: blur(10px);
-      }
-      .spec-header {
-        display: flex;
-        align-items: center;
-        gap: 0;
-        margin-bottom: 8px;
-      }
-      .spec-label { font-size: 0.9rem; color: #b5beca; font-weight: 700; }
-      .spec-value { 
-        font-size: 1.1rem; 
-        font-weight: 700; 
-        color: #fff; 
-        margin-bottom: 6px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .spec-bar-container {
-        width: 100%;
-        height: 6px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 3px;
-        overflow: hidden;
-      }
-      .spec-bar-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
-        border-radius: 3px;
-      }
-      .spec-badge {
-         background: rgba(79, 172, 254, 0.2);
-         color: #4facfe;
-         padding: 4px 8px;
-         border-radius: 6px;
-         font-size: 0.85rem;
-         font-weight: 600;
-      }
-    `;
-    specSection.appendChild(style);
-    perfBody.appendChild(specSection);
+  // Create spec mapping if not exists
+  if (Object.keys(repSpecs).length === 0 && component.specs) {
+    const blockedKeys = ['id', 'name', 'price', 'image', 'imageUrl', 'category', 'description', 'link', 'mall_link', 'hashtags', 'compatibility_status', 'reasons', 'score', 'source', 'sql_database', 'embedding', 'metadata'];
+    repSpecs = Object.entries(component.specs)
+      .filter(([k, v]) => !blockedKeys.includes(k) && !k.startsWith('field_') && typeof v !== 'object' && v !== null)
+      .slice(0, 4) // Show top 4
+      .reduce((obj, [k, v]) => ({ ...obj, [k]: v }), {});
   }
 
-  // ----- 가격 추적 그래프 (라인) -----
-  const rawHistory = component.priceHistory || component.history || component.trend;
-  const fallbackHistory = [
-    { label: '6개월 전', value: 720000 },
-    { label: '4개월 전', value: 780000 },
-    { label: '3개월 전', value: 650000 },
-    { label: '2개월 전', value: 840000 },
-    { label: '1개월 전', value: 800000 },
-    { label: '오늘', value: 760000 },
-    { label: '다음 분기', value: 700000 },
-  ];
-  const history = Array.isArray(rawHistory) && rawHistory.length >= 3 ? rawHistory : fallbackHistory;
+  // Fallback if still empty
+  if (Object.keys(repSpecs).length < 2) {
+    repSpecs = { '기본 정보': '상세 스펙 확인 필요' };
+  }
 
-  const lineSection = document.createElement('div');
-  lineSection.className = 'perf-section line-section';
-  lineSection.innerHTML = `
-    <div class="section-title">가격 예측 추이</div>
-    <div class="line-chart">
-      <svg preserveAspectRatio="none"></svg>
-      <div class="line-x-labels"></div>
-    </div>
-  `;
+  // Common Spec Icons map (Simple text fallback)
+  const SPEC_ICONS = {
+    'cores': 'core', 'clock': 'clock', 'tdp': 'power', 'socket': 'cpu',
+    'capacity': 'save', 'speed': 'activity', 'vram': 'monitor'
+  };
 
-  const svg = lineSection.querySelector('svg');
-  const xLabelsContainer = lineSection.querySelector('.line-x-labels');
-  const width = 1000; // virtual width for scaling
-  const height = 260;
-  const padding = { top: 24, right: 24, bottom: 50, left: 70 };
-  const innerWidth = width - padding.left - padding.right;
-  const innerHeight = height - padding.top - padding.bottom;
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  const specSection = document.createElement('div');
+  specSection.className = 'perf-card';
+  specSection.innerHTML = `<h3 class="perf-section-title">주요 사양</h3>`;
 
-  const values = history.map(h => Number.isFinite(h.value) ? h.value : 0);
-  const maxV = 1000000;
-  const minV = 0;
-  const span = Math.max(1, maxV - minV);
+  const specGrid = document.createElement('div');
+  specGrid.className = 'perf-spec-grid';
 
-  const points = values.map((v, i) => {
-    const x = padding.left + (i / Math.max(1, history.length - 1)) * innerWidth;
-    const y = padding.top + innerHeight - ((v - minV) / span) * innerHeight;
-    return { x, y, v };
+  Object.entries(repSpecs).slice(0, 4).forEach(([key, val]) => {
+    const item = document.createElement('div');
+    item.className = 'perf-spec-item';
+    // Simple label mapping
+    let label = key;
+    if (key === 'cores' || key === 'core_count') label = '코어 수';
+    if (key === 'clock') label = '부스트 클럭';
+    if (key === 'tdp') label = 'TDP';
+    if (key === 'socket') label = '소켓';
+    if (key === 'capacity') label = '용량';
+
+    item.innerHTML = `
+        <span class="perf-spec-label">${label}</span>
+        <span class="perf-spec-value">${val}</span>
+      `;
+    specGrid.appendChild(item);
   });
 
-  const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-  polyline.setAttribute('fill', 'none');
-  polyline.setAttribute('stroke', '#3fa9f5');
-  polyline.setAttribute('stroke-width', '4');
-  polyline.setAttribute('points', points.map(p => `${p.x},${p.y}`).join(' '));
+  specSection.appendChild(specGrid);
+  perfBody.appendChild(specSection);
 
-  const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-  gradient.id = 'lineGradient';
-  gradient.setAttribute('x1', '0%');
-  gradient.setAttribute('x2', '0%');
-  gradient.setAttribute('y1', '0%');
-  gradient.setAttribute('y2', '100%');
-  const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-  stop1.setAttribute('offset', '0%');
-  stop1.setAttribute('stop-color', '#3fa9f5');
-  const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-  stop2.setAttribute('offset', '100%');
-  stop2.setAttribute('stop-color', '#3fa9f5');
-  gradient.appendChild(stop1);
-  gradient.appendChild(stop2);
 
-  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-  defs.appendChild(gradient);
+  // --- 3. Price History Graph (SVG) ---
+  const priceSection = document.createElement('div');
+  priceSection.className = 'perf-card';
+  priceSection.innerHTML = `<h3 class="perf-section-title">가격 예측 추이</h3>`;
 
-  svg.appendChild(defs);
+  const graphContainer = document.createElement('div');
+  graphContainer.className = 'perf-price-graph';
+
+  // Data Generation (Deterministic)
+  const getHash = (str) => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) hash = (hash << 5) - hash + str.charCodeAt(i) | 0;
+    return Math.abs(hash);
+  };
+  const seed = getHash(component.name);
+  const getRand = (offset) => {
+    const x = Math.sin(seed + offset) * 10000;
+    return x - Math.floor(x);
+  };
+
+  const basePrice = typeof component.price === 'number' ? component.price : parseFloat(String(component.price).replace(/[^0-9]/g, '')) || 500000;
+  const history = [];
+  for (let i = -5; i <= 1; i++) {
+    let change = (getRand(i) - 0.5) * 0.15; // +/- 15%
+    history.push({
+      label: i === 0 ? '오늘' : (i > 0 ? '다음 분기' : `${Math.abs(i)}개월 전`),
+      value: basePrice * (1 + change)
+    });
+  }
+
+  // Draw SVG
+  const maxP = Math.max(...history.map(d => d.value)) * 1.1;
+  const minP = Math.min(...history.map(d => d.value)) * 0.9;
+
+  let points = "";
+  let width = 800; // virtual width
+  let height = 200;
+
+  history.forEach((d, i) => {
+    const x = (i / (history.length - 1)) * width;
+    const y = height - ((d.value - minP) / (maxP - minP)) * height;
+    points += `${x},${y} `;
+  });
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", "100%");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.style.overflow = "visible";
+
+  // Polyline
+  const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+  polyline.setAttribute("points", points);
+  polyline.setAttribute("class", "graph-line");
   svg.appendChild(polyline);
 
-  // Y축 라벨 (가격)
-  const yTicks = [maxV, minV + span * 0.5, minV];
-  yTicks.forEach(val => {
-    const y = padding.top + innerHeight - ((val - minV) / span) * innerHeight;
-    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    t.setAttribute('x', padding.left - 10);
-    t.setAttribute('y', y + 4);
-    t.setAttribute('text-anchor', 'end');
-    t.setAttribute('fill', 'var(--color-text-muted)');
-    t.setAttribute('font-size', '12');
-    t.setAttribute('font-weight', '700');
-    t.setAttribute('font-family', 'inherit');
-    t.textContent = `₩${Math.round(val)}`;
-    svg.appendChild(t);
-  });
-
-  // 데이터 포인트 + 가격 라벨
-  points.forEach((p, i) => {
-    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', p.x);
-    circle.setAttribute('cy', p.y);
-    circle.setAttribute('r', '6');
-    circle.setAttribute('fill', '#3fa9f5');
-    circle.style.cursor = 'pointer';
+  // Dots
+  history.forEach((d, i) => {
+    const x = (i / (history.length - 1)) * width;
+    const y = height - ((d.value - minP) / (maxP - minP)) * height;
+    const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    circle.setAttribute("cx", x);
+    circle.setAttribute("cy", y);
+    circle.setAttribute("class", "graph-dot");
     svg.appendChild(circle);
-
-    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    text.setAttribute('x', p.x);
-    text.setAttribute('y', p.y - 22);
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('fill', 'var(--color-text-primary)');
-    text.setAttribute('font-size', '14');
-    text.setAttribute('font-weight', '700');
-    text.textContent = `₩${Math.round(p.v).toLocaleString('ko-KR')}`;
-    text.style.opacity = '0';
-    text.style.transition = 'opacity 0.2s ease';
-    svg.appendChild(text);
-
-    circle.addEventListener('mouseenter', () => text.style.opacity = '1');
-    circle.addEventListener('mouseleave', () => text.style.opacity = '0');
   });
 
-  // X축 라벨 (날짜/시점) - 호버 시 금액 표시
-  history.forEach((h, idx) => {
-    const label = document.createElement('span');
-    label.textContent = h.label || '';
-    label.style.position = 'relative';
-    label.style.cursor = 'pointer';
-
-    // 호버 시 표시할 가격 tooltip
-    const tooltip = document.createElement('div');
-    tooltip.textContent = `₩${Math.round(h.value).toLocaleString('ko-KR')}`;
-    tooltip.style.position = 'absolute';
-    tooltip.style.bottom = '100%';
-    tooltip.style.left = '50%';
-    tooltip.style.transform = 'translateX(-50%)';
-    tooltip.style.whiteSpace = 'nowrap';
-    tooltip.style.background = 'rgba(63, 169, 245, 0.9)';
-    tooltip.style.color = 'white';
-    tooltip.style.padding = '4px 8px';
-    tooltip.style.borderRadius = '4px';
-    tooltip.style.fontSize = '11px';
-    tooltip.style.fontWeight = '700';
-    tooltip.style.marginBottom = '4px';
-    tooltip.style.opacity = '0';
-    tooltip.style.pointerEvents = 'none';
-    tooltip.style.transition = 'opacity 0.2s ease';
-
-    label.appendChild(tooltip);
-    label.addEventListener('mouseenter', () => tooltip.style.opacity = '1');
-    label.addEventListener('mouseleave', () => tooltip.style.opacity = '0');
-
-    xLabelsContainer.appendChild(label);
-  });
-
-  perfBody.appendChild(lineSection);
-
-  // ----- 성능 지표 (바) -----
-  const rawMetrics = component.benchmarks || component.performance || component.metrics;
-  const fallbackMetrics = [
-    { label: '게임', value: 78 },
-    { label: '작업 효율', value: 72 },
-    { label: '발열', value: 65 },
-    { label: '전력 효율', value: 88 },
-    { label: '저장속도', value: 74 },
-  ];
-
-  const metrics = Array.isArray(rawMetrics) && rawMetrics.length > 0 ? rawMetrics : fallbackMetrics;
-  const barColors = ['#3fa9f5', '#5af78e', '#f7d35a', '#7dd7f5', '#f582a7', '#9c7bff', '#8be9fd'];
-
-  const barSection = document.createElement('div');
-  barSection.className = 'perf-section bar-section';
-  barSection.innerHTML = `
-    <div class="section-title">성능 효율성 분석</div>
-    <div class="perf-rows"></div>
+  // Y-Axis Labels
+  const yAxis = document.createElement('div');
+  yAxis.className = 'price-y-axis';
+  yAxis.innerHTML = `
+    <span>₩${Math.round(maxP / 10000) * 10000}</span>
+    <span>₩${Math.round((maxP + minP) / 2 / 10000) * 10000}</span>
+    <span>₩0</span>
   `;
 
-  const rowsContainer = barSection.querySelector('.perf-rows');
-
-  metrics.slice(0, 6).forEach((m, idx) => {
-    const label = m.label || `Metric ${idx + 1}`;
-    const value = Number.isFinite(m.value) ? Math.max(0, Math.min(100, m.value)) : 0;
-
-    const row = document.createElement('div');
-    row.className = 'perf-row';
-    const barColor = barColors[idx % barColors.length];
-    row.innerHTML = `
-      <div class="perf-row-label">${label}</div>
-      <div class="perf-bar"><span style="width:${value}%; background:${barColor};"></span></div>
-      <div class="perf-value">${value}%</div>
-    `;
-
-    rowsContainer.appendChild(row);
+  // X-Axis Labels
+  const xAxis = document.createElement('div');
+  xAxis.className = 'price-x-axis';
+  history.forEach(d => {
+    const span = document.createElement('span');
+    span.textContent = d.label;
+    xAxis.appendChild(span);
   });
 
-  perfBody.appendChild(barSection);
+  graphContainer.appendChild(yAxis);
+  graphContainer.appendChild(svg);
+  graphContainer.appendChild(xAxis);
+
+  priceSection.appendChild(graphContainer);
+  perfBody.appendChild(priceSection);
+
+
+  // --- 4. Efficiency Analysis (Bars) ---
+  const analysisSection = document.createElement('div');
+  analysisSection.className = 'perf-card';
+  analysisSection.innerHTML = `<h3 class="perf-section-title">성능 효율성 분석</h3>`;
+
+  const analysisGrid = document.createElement('div');
+  analysisGrid.className = 'perf-analysis-grid';
+
+  // Mock Analysis Data derived from seed
+  const metrics = [
+    { label: '게임', color: 'fill-blue', val: 70 + getRand(10) * 29 },
+    { label: '작업 효율', color: 'fill-green', val: 60 + getRand(20) * 39 },
+    { label: '발열', color: 'fill-yellow', val: 50 + getRand(30) * 40 },
+    { label: '전력 효율', color: 'fill-cyan', val: 65 + getRand(40) * 30 },
+    { label: '저장 속도', color: 'fill-rose', val: 80 + getRand(50) * 19 }
+  ];
+
+  // Adjust based on category
+  const cat = component.category.toLowerCase();
+  if (cat.includes('ssd')) metrics[4].val = 95 + getRand(1) * 4;
+  if (cat.includes('cool')) { metrics[2].val = 90; metrics[0].label = '쿨링 성능'; }
+
+  metrics.forEach(m => {
+    const row = document.createElement('div');
+    row.className = 'analysis-row';
+    const pct = Math.round(m.val);
+    row.innerHTML = `
+        <span class="analysis-label">${m.label}</span>
+        <div class="analysis-bar-bg">
+            <div class="analysis-bar-fill ${m.color}" style="width: 0%"></div>
+        </div>
+        <span class="analysis-val">${pct}%</span>
+      `;
+    // Animate
+    setTimeout(() => {
+      row.querySelector('.analysis-bar-fill').style.width = `${pct}%`;
+    }, 300);
+
+    analysisGrid.appendChild(row);
+  });
+
+  analysisSection.appendChild(analysisGrid);
+  perfBody.appendChild(analysisSection);
 }
 
 /**
@@ -1982,6 +1909,8 @@ function handleCardClick(e, cardElement, component) {
 
       } catch (error) {
         console.error('[ERROR] 다음 단계 진행 오류:', error);
+        if (loadingMessage) loadingMessage.remove(); // 에러 시 로딩 제거
+        stopDynamicLoadingText();
         addMessage(`다음 단계로 진행하는 중 오류가 발생했습니다: ${error.message}`, 'error');
       }
     }
