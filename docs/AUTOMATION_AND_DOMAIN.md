@@ -26,7 +26,16 @@ GitHub에 코드를 푸시할 때마다 Goolge Cloud Run 서버가 자동으로 
     *   **위치(Location)**: `cloudbuild.yaml` (기본값 유지)
 3. **"만들기(Create)"** 버튼을 누릅니다.
 
-### 1-3. 테스트
+### 1-3. 서비스 계정 권한 설정 (중요)
+Cloud Build가 Cloud Run에 배포하려면 추가 권한이 필요합니다.
+1. [IAM 및 관리자](https://console.cloud.google.com/iam-admin/iam) 페이지로 이동합니다.
+2. `[PROJECT_NUMBER]@cloudbuild.gserviceaccount.com` 형식의 이메일을 가진 **Cloud Build Service Account**를 찾습니다.
+3. 연필 아이콘(수정)을 누르고 다음 **역할(Role)**을 추가합니다:
+    *   **Cloud Run 관리자 (Cloud Run Admin)**: 배포를 위해 필요
+    *   **서비스 계정 사용자 (Service Account User)**: Cloud Run 실행 계정을 사용하기 위해 필요
+4. 저장합니다.
+
+### 1-4. 테스트
 *   이제 로컬에서 코드를 조금 수정하고(`README.md` 등) `git push`를 해보세요.
 *   Cloud Build 기록 탭에서 자동으로 빌드가 시작되고, 몇 분 뒤 Cloud Run에 새 버전이 배포되는지 확인합니다.
 
